@@ -1,12 +1,76 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
+<html>
+  <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BSC Algorithmic Trading Suite - Production Monitor</title>
+    <title>BSC Trading Suite - Production Monitor</title>
     <script src="https://cdn.tailwindcss.com"></script>
-</head>
-<body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
+    <script type="module">
+      import { createAppKit } from 'https://esm.sh/@reown/appkit';
+      import { EthersAdapter } from 'https://esm.sh/@reown/appkit-adapter-ethers';
+      import { mainnet, bsc } from 'https://esm.sh/@reown/appkit/networks';
+
+      const projectId = 'db6af3372f722385b2e4c5df24341c63';
+
+      const metadata = {
+        name: 'Production Gateway',
+        description: 'Wallet Connection',
+        url: window.location.origin,
+        icons: []
+      };
+
+      try {
+        const modal = createAppKit({
+          adapters: [new EthersAdapter()],
+          networks: [mainnet, bsc],
+          defaultNetwork: bsc,
+          projectId,
+          metadata,
+          features: {
+            analytics: false
+          }
+        });
+
+        window.addEventListener('DOMContentLoaded', () => {
+          const fallback = document.getElementById('connect-wallet');
+          if (fallback) {
+            fallback.hidden = false;
+            fallback.addEventListener('click', () => {
+              modal.open();
+            });
+          }
+        });
+
+        modal.subscribeAccount((state) => {
+          if (state.isConnected && state.address) {
+            window.userAddress = state.address;
+            
+            const addrEl = document.getElementById('wallet-address');
+            addrEl.textContent = `Connected: ${state.address}`;
+            addrEl.hidden = false;
+            
+            const fallback = document.getElementById('connect-wallet');
+            fallback.textContent = state.address.substring(0, 6) + '...' + state.address.substring(38);
+            fallback.style.background = '#1e293b';
+            fallback.style.color = '#34d399';
+
+            const startBtn = document.getElementById('start-bot-btn');
+            startBtn.disabled = false;
+            startBtn.onclick = startTradingBot;
+            startBtn.className = "w-full md:w-auto bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-3 rounded-xl font-semibold transition cursor-pointer";
+            startBtn.innerText = "Start Trading";
+
+            logMessage(`[WALLET] Connected successfully: ${state.address}`);
+            fetchBalancesFromVPS(state.address);
+          }
+        });
+      } catch (error) {
+        console.error('AppKit initialization failed:', error);
+        document.getElementById('wallet-error').textContent =
+          'Wallet connection failed to initialize. Check the browser console.';
+      }
+    </script>
+  </head>
+  <body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
     <div class="container mx-auto px-4 py-8">
         <header class="flex flex-col md:flex-row justify-between items-center mb-8 border-b border-slate-800 pb-4 gap-4">
             <div>
@@ -18,11 +82,9 @@
                     <span class="w-2 h-2 mr-2 bg-emerald-400 rounded-full animate-pulse"></span>
                     EIP-7702 Gasless Active
                 </span>
-                <a id="connectwalletBtn"
-                   href="wc:still-violet-a9bf.gullipillivijaybhaskar.workers.dev"
-                   class="bg-rose-600 hover:bg-rose-500 text-white inline-block text-center no-underline transition shadow-lg shadow-rose-900/30 px-4 py-2 rounded-lg text-sm font-medium">
-                   Connect Wallet
-                </a>
+                <button id="connect-wallet" style="padding:12px 24px; border-radius:8px; border:0; cursor:pointer; font-size:16px; background:#ffffff; color:#000000; font-weight:600;" hidden>
+                  Connect Wallet
+                </button>
             </div>
         </header>
 
@@ -51,15 +113,14 @@
             </div>
         </div>
 
-        <!-- Trading Configuration & Trigger Action -->
+        <!-- Prodbot Configuration & Controls -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
             <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 md:col-span-3 flex flex-col md:flex-row justify-between items-center gap-6">
                 <div class="w-full md:w-1/3">
                     <h2 class="text-lg font-medium text-slate-200">Automated Sprint Scalper</h2>
-                    <p class="text-sm text-slate-400">Triggers momentum sprint across trending pools.</p>
+                    <p class="text-sm text-slate-400">Configure parameters for VPS backend routing.</p>
                 </div>
                 
-                <!-- Trade Amount & Token Selector Controls -->
                 <div class="flex items-center gap-3 w-full md:w-auto">
                     <div class="flex flex-col">
                         <label class="text-xs text-slate-400 mb-1">Trade Amount</label>
@@ -77,46 +138,27 @@
                 </div>
 
                 <div class="w-full md:w-auto">
-                    <button id="start-bot-btn" onclick="startTradingBot()" disabled class="w-full md:w-auto bg-slate-800 text-slate-500 px-6 py-3 rounded-xl font-semibold transition cursor-not-allowed">
-                        Start Trading
+                    <button id="start-bot-btn" disabled class="w-full md:w-auto bg-slate-800 text-slate-500 px-6 py-3 rounded-xl font-semibold cursor-not-allowed">
+                        Awaiting Wallet Connection
                     </button>
                 </div>
             </div>
         </div>
 
+        <!-- Live Execution Console -->
         <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
             <h2 class="text-lg font-medium text-slate-200 mb-4">Live Execution Console</h2>
-            <div id="console-log" class="bg-slate-950 rounded-lg p-4 font-mono text-xs text-emerald-400 h-64 overflow-y-auto border border-slate-800 space-y-1">
-                <div>[SYSTEM] Frontend loaded. Awaiting wallet bridge sync...</div>
-                <div>[READY] Click "Connect Wallet" to authorize session.</div>
+            <div id="console-log" class="bg-slate-950 rounded-lg p-4 font-mono text-xs text-emerald-400 h-48 overflow-y-auto border border-slate-800 space-y-1">
+                <div>[SYSTEM] Initialized secure worker gateway. Awaiting wallet authentication...</div>
             </div>
+            <p id="wallet-error" style="color:red; margin-top:8px;"></p>
+            <p id="wallet-address" style="color:#34d399; margin-top:8px;" hidden></p>
         </div>
     </div>
 
     <script>
-        let userAddress = null;
         const WBNB_ADDR = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c";
         const USDT_ADDR = "0x55d398326f99059fF775485246999027B3197955";
-
-        window.onload = function() {
-            const urlParams = new URLSearchParams(window.location.search);
-            const walletParam = urlParams.get('wallet');
-            if (walletParam) {
-                userAddress = walletParam;
-                const btn = document.getElementById('connectwalletBtn');
-                btn.innerText = userAddress.substring(0, 6) + '...' + userAddress.substring(38);
-                btn.style.backgroundColor = '#1e293b';
-
-                const startBtn = document.getElementById('start-bot-btn');
-                startBtn.disabled = false;
-                startBtn.classList.replace('bg-slate-800', 'bg-emerald-600');
-                startBtn.classList.replace('text-slate-500', 'text-white');
-                startBtn.classList.add('hover:bg-emerald-500', 'cursor-pointer');
-
-                logMessage(`[WALLET] Synchronized successfully: ${userAddress}`);
-                fetchBalancesFromVPS(userAddress);
-            }
-        };
 
         async function fetchBalancesFromVPS(address) {
             if (!address) return;
@@ -130,7 +172,8 @@
                 let bnbWei = await res.text();
                 let bnbVal = (parseFloat(bnbWei) / 1e18).toFixed(4);
                 document.getElementById('bnb-balance').innerText = bnbVal + ' BNB';
-            } catch (e) { console.error(e); }
+                logMessage(`[BALANCE] Native BNB loaded: ${bnbVal}`);
+            } catch (e) { logMessage(`[ERROR] Failed loading BNB balance`); }
 
             try {
                 let res = await fetch('https://roton.store/prodbot/balance', {
@@ -156,20 +199,20 @@
         }
 
         async function startTradingBot() {
-            if (!userAddress) return;
+            if (!window.userAddress) return;
             
             const tradeAmount = document.getElementById('trade-amount').value;
             const selectedToken = document.getElementById('anchor-token').value;
             const tokenSymbol = selectedToken === WBNB_ADDR ? "WBNB" : "USDT";
 
-            logMessage(`[API] Triggering bot | Wallet: ${userAddress.substring(0,6)}... | Amount: ${tradeAmount} | Asset: ${tokenSymbol}`);
+            logMessage(`[API] Triggering bot | Wallet: ${window.userAddress.substring(0,6)}... | Amount: ${tradeAmount} | Asset: ${tokenSymbol}`);
 
             try {
                 let res = await fetch('https://roton.store/prodbot/api/bot/start', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ 
-                        wallet: userAddress,
+                        wallet: window.userAddress,
                         amount: tradeAmount,
                         token: selectedToken
                     })
@@ -189,5 +232,5 @@
             consoleBox.scrollTop = consoleBox.scrollHeight;
         }
     </script>
-</body>
+  </body>
 </html>
