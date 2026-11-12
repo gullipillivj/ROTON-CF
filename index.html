@@ -8,42 +8,83 @@
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
     <div class="container mx-auto px-4 py-8">
-        <header class="flex justify-between items-center mb-8 border-b border-slate-800 pb-4">
+        <header class="flex flex-col md:flex-row justify-between items-center mb-8 border-b border-slate-800 pb-4 gap-4">
             <div>
                 <h1 class="text-2xl font-bold tracking-tight text-emerald-400">BSC Trading Suite</h1>
                 <p class="text-sm text-slate-400">Network: bsc-mainnet | Framework: Brownie v1.22.0</p>
             </div>
-            <div class="flex items-center gap-3">
+            <div class="flex items-center gap-4">
                 <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-emerald-950 text-emerald-400 border border-emerald-800">
                     <span class="w-2 h-2 mr-2 bg-emerald-400 rounded-full animate-pulse"></span>
                     EIP-7702 Gasless Active
                 </span>
+                <!-- Mandatory Connect Wallet Button -->
+                <button id="connect-wallet-btn" onclick="connectWallet()" class="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition shadow-lg shadow-emerald-900/30">
+                    Connect Wallet
+                </button>
             </div>
         </header>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <!-- Asset Balances & Gas Indicator Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            <!-- Native BNB (Gas Info) -->
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 relative overflow-hidden">
+                <div class="absolute top-0 right-0 bg-amber-500/10 text-amber-400 text-xs px-2 py-1 rounded-bl font-mono">Gas Token</div>
+                <h3 class="text-sm font-medium text-slate-400 mb-2">Native BNB (Gas)</h3>
+                <p id="bnb-balance" class="text-3xl font-semibold text-amber-400">0.0000</p>
+                <p class="text-xs text-slate-500 mt-1">Required for gas status</p>
+            </div>
+            <!-- WBNB -->
             <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
                 <h3 class="text-sm font-medium text-slate-400 mb-2">Primary Asset (WBNB)</h3>
                 <p id="wbnb-balance" class="text-3xl font-semibold text-slate-100">0.0000</p>
+                <p class="text-xs text-slate-500 mt-1">Wrapped liquidity anchor</p>
             </div>
+            <!-- USDT -->
             <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
-                <h3 class="text-sm font-medium text-slate-400 mb-2">Active Liquidity Pools</h3>
-                <p id="pool-status" class="text-3xl font-semibold text-sky-400">Optimized</p>
+                <h3 class="text-sm font-medium text-slate-400 mb-2">Primary Asset (USDT)</h3>
+                <p id="usdt-balance" class="text-3xl font-semibold text-emerald-400">$0.00</p>
+                <p class="text-xs text-slate-500 mt-1">Stablecoin anchor</p>
             </div>
+            <!-- Execution Mode -->
             <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
                 <h3 class="text-sm font-medium text-slate-400 mb-2">Execution Mode</h3>
                 <p class="text-3xl font-semibold text-purple-400">Production</p>
+                <p class="text-xs text-slate-500 mt-1">EIP-7702 Delegation</p>
+            </div>
+        </div>
+
+        <!-- Controls & Trigger Action -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 md:col-span-3 flex justify-between items-center">
+                <div>
+                    <h2 class="text-lg font-medium text-slate-200">Automated Sprint Scalper</h2>
+                    <p class="text-sm text-slate-400">Triggers 3-minute momentum sprint across 24hr trending tokens.</p>
+                </div>
+                <button id="start-bot-btn" onclick="startTradingBot()" disabled class="bg-slate-800 text-slate-500 px-6 py-3 rounded-xl font-semibold transition cursor-not-allowed">
+                    Start Trading
+                </button>
             </div>
         </div>
 
         <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
             <h2 class="text-lg font-medium text-slate-200 mb-4">Live Execution Console</h2>
             <div id="console-log" class="bg-slate-950 rounded-lg p-4 font-mono text-xs text-emerald-400 h-64 overflow-y-auto border border-slate-800 space-y-1">
-                <div>[SYSTEM] Initializing Brownie execution environment on bsc-mainnet...</div>
-                <div>[ROUTER] Loaded OpenOcean aggregator parameters and fallback logic.</div>
-                <div>[READY] Waiting for trigger signal from run_binance_trading.py...</div>
+                <div>[SYSTEM] Initializing Reown AppKit & Web3 provider context...</div>
+                <div>[READY] Please connect your wallet to load live BNB gas status, token balances, and enable trading triggers.</div>
             </div>
         </div>
     </div>
-</body>
-</html>
+
+    <script>
+        let userAddress = null;
+        const WBNB_ADDR = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c";
+        const USDT_ADDR = "0x55d398326f99059fF775485246999027B3197955";
+
+        async function connectWallet() {
+            if (window.ethereum) {
+                try {
+                    const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+                    userAddress = accounts[0];
+                    document.getElementById('connect-wallet-btn').innerText = userAddress.substring(0, 6) + '...' + userAddress.substring(38);
+                    document.getElementById('connect-wallet-btn').classList.replace('bg-emerald-600', 'bg-slate-8
