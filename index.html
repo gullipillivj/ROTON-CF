@@ -18,13 +18,12 @@
                     <span class="w-2 h-2 mr-2 bg-emerald-400 rounded-full animate-pulse"></span>
                     EIP-7702 Gasless Active
                 </span>
-                <!-- Cloudflare Worker Connect Wallet Link -->
-                <a id="connectwalletBtn"
-                   href="https://still-violet-a9bf.gullipillivijaybhaskar.workers.dev/"
-                   target="_blank"
-                   class="rounded-textbox bg-rose-600 hover:bg-rose-500 text-white inline-block text-center no-underline transition shadow-lg shadow-rose-900/30 px-4 py-2 rounded-lg text-sm font-medium">
+                <!-- Direct In-Page Connect Wallet Button -->
+                <button id="connectwalletBtn"
+                   onclick="connectWallet()"
+                   class="bg-rose-600 hover:bg-rose-500 text-white inline-block text-center transition shadow-lg shadow-rose-900/30 px-4 py-2 rounded-lg text-sm font-medium cursor-pointer">
                    Connect Wallet
-                </a>
+                </button>
             </div>
         </header>
 
@@ -73,8 +72,8 @@
         <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
             <h2 class="text-lg font-medium text-slate-200 mb-4">Live Execution Console</h2>
             <div id="console-log" class="bg-slate-950 rounded-lg p-4 font-mono text-xs text-emerald-400 h-64 overflow-y-auto border border-slate-800 space-y-1">
-                <div>[SYSTEM] Initializing Cloudflare Worker context & Cloudflare AppKit...</div>
-                <div>[READY] Click "Connect Wallet" to authorize via your Cloudflare worker deployment.</div>
+                <div>[SYSTEM] Initializing Web3 provider context on GitHub frontend...</div>
+                <div>[READY] Click "Connect Wallet" to link your Web3 provider and load live token balances.</div>
             </div>
         </div>
     </div>
@@ -84,63 +83,69 @@
         const WBNB_ADDR = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c";
         const USDT_ADDR = "0x55d398326f99059fF775485246999027B3197955";
 
-        window.onload = function() {
-            // Check if wallet address is passed via URL query parameter from Cloudflare redirect
-            const urlParams = new URLSearchParams(window.location.search);
-            const walletParam = urlParams.get('wallet');
-            if (walletParam) {
-                userAddress = walletParam;
-                const btn = document.getElementById('connectwalletBtn');
-                btn.innerText = userAddress.substring(0, 6) + '...' + userAddress.substring(38);
-                btn.style.backgroundColor = '#1e293b';
+        async function connectWallet() {
+            if (window.ethereum) {
+                try {
+                    logMessage("[WALLET] Requesting account access from injected provider...");
+                    const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+                    userAddress = accounts[0];
 
-                // Enable start button
-                const startBtn = document.getElementById('start-bot-btn');
-                startBtn.disabled = false;
-                startBtn.classList.replace('bg-slate-800', 'bg-emerald-600');
-                startBtn.classList.replace('text-slate-500', 'text-white');
-                startBtn.classList.add('hover:bg-emerald-500', 'cursor-pointer');
+                    const btn = document.getElementById('connectwalletBtn');
+                    btn.innerText = userAddress.substring(0, 6) + '...' + userAddress.substring(38);
+                    btn.style.backgroundColor = '#1e293b';
 
-                logMessage(`[WALLET] Synchronized successfully: ${userAddress}`);
-                fetchBalances();
+                    // Enable start trading button
+                    const startBtn = document.getElementById('start-bot-btn');
+                    startBtn.disabled = false;
+                    startBtn.classList.replace('bg-slate-800', 'bg-emerald-600');
+                    startBtn.classList.replace('text-slate-500', 'text-white');
+                    startBtn.classList.add('hover:bg-emerald-500', 'cursor-pointer');
+
+                    logMessage(`[WALLET] Connected successfully: ${userAddress}`);
+                    fetchBalances();
+                } catch (err) {
+                    logMessage(`[ERROR] Wallet connection rejected: ${err.message}`);
+                }
+            } else {
+                alert('No Web3 wallet detected (window.ethereum missing). Please open this page inside a Web3-enabled browser or Reown AppKit session.');
             }
-        };
+        }
 
         async function fetchBalances() {
             if (!userAddress) return;
             
             // 1. Fetch Native BNB Balance (Gas Information)
             try {
-                let res = await fetch('/prodbot/balance', {
+                let res = await fetch('https://roton.store/prodbot/balance', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ user: userAddress, token: "bnb" })
                 });
-                let bnbWei = await res.json();
+                let bnbWei = await res.text();
                 let bnbVal = (parseFloat(bnbWei) / 1e18).toFixed(4);
                 document.getElementById('bnb-balance').innerText = bnbVal + ' BNB';
             } catch (e) { console.error(e); }
 
             // 2. Fetch WBNB Balance
             try {
-                let res = await fetch('/prodbot/balance', {
+                let res = await fetch('https://roton.store/prodbot/balance', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ user: userAddress, token: WBNB_ADDR })
                 });
-                let wbnbWei = await res.json();
+                let wbnbWei = await res.text();
                 let wbnbVal = (parseFloat(wbnbWei) / 1e18).toFixed(4);
                 document.getElementById('wbnb-balance').innerText = wbnbVal;
             } catch (e) { console.error(e); }
 
             // 3. Fetch USDT Balance
             try {
-                let res = await fetch('/prodbot/balance', {
+                let res = await fetch('https://roton.store/prodbot/balance', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ user: userAddress, token: USDT_ADDR })
                 });
-                let usdtWei = await res.json();
+                let usdtWei = await res.text();
                 let usdtVal = (parseFloat(usdtWei) / 1e18).toFixed(2);
                 document.getElementById('usdt-balance').innerText = '$' + usdtVal;
             } catch (e) { console.error(e); }
@@ -151,7 +156,7 @@
             logMessage(`[API] Transmitting start signal for wallet ${userAddress}...`);
 
             try {
-                let res = await fetch('/prodbot/api/bot/start', {
+                let res = await fetch('https://roton.store/prodbot/api/bot/start', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ wallet: userAddress })
