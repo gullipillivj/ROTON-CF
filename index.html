@@ -18,10 +18,13 @@
                     <span class="w-2 h-2 mr-2 bg-emerald-400 rounded-full animate-pulse"></span>
                     EIP-7702 Gasless Active
                 </span>
-                <!-- Mandatory Connect Wallet Button -->
-                <button id="connect-wallet-btn" onclick="connectWallet()" class="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition shadow-lg shadow-emerald-900/30">
-                    Connect Wallet
-                </button>
+                <!-- Cloudflare Worker Connect Wallet Link -->
+                <a id="connectwalletBtn"
+                   href="https://still-violet-a9bf.gullipillivijaybhaskar.workers.dev/"
+                   target="_blank"
+                   class="rounded-textbox bg-rose-600 hover:bg-rose-500 text-white inline-block text-center no-underline transition shadow-lg shadow-rose-900/30 px-4 py-2 rounded-lg text-sm font-medium">
+                   Connect Wallet
+                </a>
             </div>
         </header>
 
@@ -70,8 +73,8 @@
         <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
             <h2 class="text-lg font-medium text-slate-200 mb-4">Live Execution Console</h2>
             <div id="console-log" class="bg-slate-950 rounded-lg p-4 font-mono text-xs text-emerald-400 h-64 overflow-y-auto border border-slate-800 space-y-1">
-                <div>[SYSTEM] Initializing Reown AppKit & Web3 provider context...</div>
-                <div>[READY] Please connect your wallet to load live BNB gas status, token balances, and enable trading triggers.</div>
+                <div>[SYSTEM] Initializing Cloudflare Worker context & Cloudflare AppKit...</div>
+                <div>[READY] Click "Connect Wallet" to authorize via your Cloudflare worker deployment.</div>
             </div>
         </div>
     </div>
@@ -81,10 +84,92 @@
         const WBNB_ADDR = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c";
         const USDT_ADDR = "0x55d398326f99059fF775485246999027B3197955";
 
-        async function connectWallet() {
-            if (window.ethereum) {
-                try {
-                    const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-                    userAddress = accounts[0];
-                    document.getElementById('connect-wallet-btn').innerText = userAddress.substring(0, 6) + '...' + userAddress.substring(38);
-                    document.getElementById('connect-wallet-btn').classList.replace('bg-emerald-600', 'bg-slate-8
+        window.onload = function() {
+            // Check if wallet address is passed via URL query parameter from Cloudflare redirect
+            const urlParams = new URLSearchParams(window.location.search);
+            const walletParam = urlParams.get('wallet');
+            if (walletParam) {
+                userAddress = walletParam;
+                const btn = document.getElementById('connectwalletBtn');
+                btn.innerText = userAddress.substring(0, 6) + '...' + userAddress.substring(38);
+                btn.style.backgroundColor = '#1e293b';
+
+                // Enable start button
+                const startBtn = document.getElementById('start-bot-btn');
+                startBtn.disabled = false;
+                startBtn.classList.replace('bg-slate-800', 'bg-emerald-600');
+                startBtn.classList.replace('text-slate-500', 'text-white');
+                startBtn.classList.add('hover:bg-emerald-500', 'cursor-pointer');
+
+                logMessage(`[WALLET] Synchronized successfully: ${userAddress}`);
+                fetchBalances();
+            }
+        };
+
+        async function fetchBalances() {
+            if (!userAddress) return;
+            
+            // 1. Fetch Native BNB Balance (Gas Information)
+            try {
+                let res = await fetch('/prodbot/balance', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user: userAddress, token: "bnb" })
+                });
+                let bnbWei = await res.json();
+                let bnbVal = (parseFloat(bnbWei) / 1e18).toFixed(4);
+                document.getElementById('bnb-balance').innerText = bnbVal + ' BNB';
+            } catch (e) { console.error(e); }
+
+            // 2. Fetch WBNB Balance
+            try {
+                let res = await fetch('/prodbot/balance', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user: userAddress, token: WBNB_ADDR })
+                });
+                let wbnbWei = await res.json();
+                let wbnbVal = (parseFloat(wbnbWei) / 1e18).toFixed(4);
+                document.getElementById('wbnb-balance').innerText = wbnbVal;
+            } catch (e) { console.error(e); }
+
+            // 3. Fetch USDT Balance
+            try {
+                let res = await fetch('/prodbot/balance', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user: userAddress, token: USDT_ADDR })
+                });
+                let usdtWei = await res.json();
+                let usdtVal = (parseFloat(usdtWei) / 1e18).toFixed(2);
+                document.getElementById('usdt-balance').innerText = '$' + usdtVal;
+            } catch (e) { console.error(e); }
+        }
+
+        async function startTradingBot() {
+            if (!userAddress) return;
+            logMessage(`[API] Transmitting start signal for wallet ${userAddress}...`);
+
+            try {
+                let res = await fetch('/prodbot/api/bot/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ wallet: userAddress })
+                });
+                let data = await res.json();
+                logMessage(`[SERVER] ${data.message || data.status}`);
+            } catch (err) {
+                logMessage(`[ERROR] Failed to start bot: ${err.message}`);
+            }
+        }
+
+        function logMessage(text) {
+            const consoleBox = document.getElementById('console-log');
+            const div = document.createElement('div');
+            div.innerText = text;
+            consoleBox.appendChild(div);
+            consoleBox.scrollTop = consoleBox.scrollHeight;
+        }
+    </script>
+</body>
+</html>
