@@ -18,9 +18,8 @@
                     <span class="w-2 h-2 mr-2 bg-emerald-400 rounded-full animate-pulse"></span>
                     EIP-7702 Gasless Active
                 </span>
-                <!-- Direct In-Page Connect Wallet Button -->
-                <button id="connectwalletBtn"
-                   onclick="connectWallet()"
+                <!-- Reown AppKit Native Connect Button -->
+                <button id="connect-wallet-btn"
                    class="bg-rose-600 hover:bg-rose-500 text-white inline-block text-center transition shadow-lg shadow-rose-900/30 px-4 py-2 rounded-lg text-sm font-medium cursor-pointer">
                    Connect Wallet
                 </button>
@@ -29,26 +28,22 @@
 
         <!-- Asset Balances & Gas Indicator Grid -->
         <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-            <!-- Native BNB (Gas Info) -->
             <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 relative overflow-hidden">
                 <div class="absolute top-0 right-0 bg-amber-500/10 text-amber-400 text-xs px-2 py-1 rounded-bl font-mono">Gas Token</div>
                 <h3 class="text-sm font-medium text-slate-400 mb-2">Native BNB (Gas)</h3>
                 <p id="bnb-balance" class="text-3xl font-semibold text-amber-400">0.0000</p>
                 <p class="text-xs text-slate-500 mt-1">Required for gas status</p>
             </div>
-            <!-- WBNB -->
             <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
                 <h3 class="text-sm font-medium text-slate-400 mb-2">Primary Asset (WBNB)</h3>
                 <p id="wbnb-balance" class="text-3xl font-semibold text-slate-100">0.0000</p>
                 <p class="text-xs text-slate-500 mt-1">Wrapped liquidity anchor</p>
             </div>
-            <!-- USDT -->
             <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
                 <h3 class="text-sm font-medium text-slate-400 mb-2">Primary Asset (USDT)</h3>
                 <p id="usdt-balance" class="text-3xl font-semibold text-emerald-400">$0.00</p>
                 <p class="text-xs text-slate-500 mt-1">Stablecoin anchor</p>
             </div>
-            <!-- Execution Mode -->
             <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
                 <h3 class="text-sm font-medium text-slate-400 mb-2">Execution Mode</h3>
                 <p class="text-3xl font-semibold text-purple-400">Production</p>
@@ -56,94 +51,143 @@
             </div>
         </div>
 
-        <!-- Controls & Trigger Action -->
+        <!-- Trading Configuration & Trigger Action -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 md:col-span-3 flex justify-between items-center">
-                <div>
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 md:col-span-3 flex flex-col md:flex-row justify-between items-center gap-6">
+                <div class="w-full md:w-1/3">
                     <h2 class="text-lg font-medium text-slate-200">Automated Sprint Scalper</h2>
-                    <p class="text-sm text-slate-400">Triggers 3-minute momentum sprint across 24hr trending tokens.</p>
+                    <p class="text-sm text-slate-400">Triggers momentum sprint across trending pools.</p>
                 </div>
-                <button id="start-bot-btn" onclick="startTradingBot()" disabled class="bg-slate-800 text-slate-500 px-6 py-3 rounded-xl font-semibold transition cursor-not-allowed">
-                    Start Trading
-                </button>
+                
+                <!-- Trade Amount & Token Selector Controls -->
+                <div class="flex items-center gap-3 w-full md:w-auto">
+                    <div class="flex flex-col">
+                        <label class="text-xs text-slate-400 mb-1">Trade Amount</label>
+                        <input type="number" id="trade-amount" value="0.1" step="0.01" min="0.001" 
+                               class="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-100 text-sm font-mono w-32 focus:outline-none focus:border-emerald-500">
+                    </div>
+                    <div class="flex flex-col">
+                        <label class="text-xs text-slate-400 mb-1">Anchor Asset</label>
+                        <select id="anchor-token" 
+                                class="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-100 text-sm font-mono focus:outline-none focus:border-emerald-500">
+                            <option value="0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c">WBNB</option>
+                            <option value="0x55d398326f99059fF775485246999027B3197955">USDT</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="w-full md:w-auto">
+                    <button id="start-bot-btn" onclick="startTradingBot()" disabled class="w-full md:w-auto bg-slate-800 text-slate-500 px-6 py-3 rounded-xl font-semibold transition cursor-not-allowed">
+                        Start Trading
+                    </button>
+                </div>
             </div>
         </div>
 
         <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
             <h2 class="text-lg font-medium text-slate-200 mb-4">Live Execution Console</h2>
             <div id="console-log" class="bg-slate-950 rounded-lg p-4 font-mono text-xs text-emerald-400 h-64 overflow-y-auto border border-slate-800 space-y-1">
-                <div>[SYSTEM] Initializing Web3 provider context on GitHub frontend...</div>
-                <div>[READY] Click "Connect Wallet" to link your Web3 provider and load live token balances.</div>
+                <div>[SYSTEM] Initializing Reown AppKit session on GitHub frontend...</div>
+                <div>[READY] Click "Connect Wallet" to select your wallet provider.</div>
             </div>
         </div>
     </div>
 
+    <!-- Reown AppKit Initialization (Vanilla JS ESM) -->
+    <script type="module">
+        import { createAppKit } from 'https://esm.sh/@reown/appkit@1.6.8';
+        import { EthersAdapter } from 'https://esm.sh/@reown/appkit-adapter-ethers@1.6.8';
+
+        const bscMainnet = {
+            id: 56,
+            name: 'Binance Smart Chain',
+            network: 'bsc',
+            nativeCurrency: { name: 'BNB', symbol: 'BNB', decimals: 18 },
+            rpcUrls: { default: { http: ['https://bsc-dataseed.binance.org'] } },
+            blockExplorers: { default: { name: 'BscScan', url: 'https://bscscan.com' } }
+        };
+
+        const projectId = 'db6af3372f722385b2e4c5df24341c63';
+        const metadata = {
+            name: 'BSC Trading Suite',
+            description: 'Automated Trading Frontend',
+            url: window.location.origin,
+            icons: []
+        };
+
+        window.modal = createAppKit({
+            adapters: [new EthersAdapter()],
+            networks: [bscMainnet],
+            defaultNetwork: bscMainnet,
+            projectId,
+            metadata,
+            features: { analytics: false }
+        });
+
+        const connectBtn = document.getElementById('connect-wallet-btn');
+        connectBtn.addEventListener('click', () => {
+            window.modal.open();
+        });
+
+        window.modal.subscribeAccount((state) => {
+            if (state.isConnected && state.address) {
+                window.userAddress = state.address;
+                connectBtn.innerText = window.userAddress.substring(0, 6) + '...' + window.userAddress.substring(38);
+                connectBtn.style.backgroundColor = '#1e293b';
+
+                try {
+                    window.walletProvider = window.modal.getWalletProvider ? window.modal.getWalletProvider() : window.ethereum;
+                    logMessage(`[WALLET] Provider successfully hooked: Active`);
+                } catch (err) {
+                    logMessage(`[NOTE] Using default provider fallback.`);
+                }
+
+                const startBtn = document.getElementById('start-bot-btn');
+                startBtn.disabled = false;
+                startBtn.classList.replace('bg-slate-800', 'bg-emerald-600');
+                startBtn.classList.replace('text-slate-500', 'text-white');
+                startBtn.classList.add('hover:bg-emerald-500', 'cursor-pointer');
+
+                logMessage(`[WALLET] Connected successfully: ${window.userAddress}`);
+                fetchBalancesFromVPS(window.userAddress);
+            }
+        });
+    </script>
+
     <script>
-        let userAddress = null;
         const WBNB_ADDR = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c";
         const USDT_ADDR = "0x55d398326f99059fF775485246999027B3197955";
 
-        async function connectWallet() {
-            if (window.ethereum) {
-                try {
-                    logMessage("[WALLET] Requesting account access from injected provider...");
-                    const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-                    userAddress = accounts[0];
+        async function fetchBalancesFromVPS(address) {
+            if (!address) return;
 
-                    const btn = document.getElementById('connectwalletBtn');
-                    btn.innerText = userAddress.substring(0, 6) + '...' + userAddress.substring(38);
-                    btn.style.backgroundColor = '#1e293b';
-
-                    // Enable start trading button
-                    const startBtn = document.getElementById('start-bot-btn');
-                    startBtn.disabled = false;
-                    startBtn.classList.replace('bg-slate-800', 'bg-emerald-600');
-                    startBtn.classList.replace('text-slate-500', 'text-white');
-                    startBtn.classList.add('hover:bg-emerald-500', 'cursor-pointer');
-
-                    logMessage(`[WALLET] Connected successfully: ${userAddress}`);
-                    fetchBalances();
-                } catch (err) {
-                    logMessage(`[ERROR] Wallet connection rejected: ${err.message}`);
-                }
-            } else {
-                alert('No Web3 wallet detected (window.ethereum missing). Please open this page inside a Web3-enabled browser or Reown AppKit session.');
-            }
-        }
-
-        async function fetchBalances() {
-            if (!userAddress) return;
-            
-            // 1. Fetch Native BNB Balance (Gas Information)
             try {
                 let res = await fetch('https://roton.store/prodbot/balance', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ user: userAddress, token: "bnb" })
+                    body: JSON.stringify({ user: address, token: "bnb" })
                 });
                 let bnbWei = await res.text();
                 let bnbVal = (parseFloat(bnbWei) / 1e18).toFixed(4);
                 document.getElementById('bnb-balance').innerText = bnbVal + ' BNB';
             } catch (e) { console.error(e); }
 
-            // 2. Fetch WBNB Balance
             try {
                 let res = await fetch('https://roton.store/prodbot/balance', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ user: userAddress, token: WBNB_ADDR })
+                    body: JSON.stringify({ user: address, token: WBNB_ADDR })
                 });
                 let wbnbWei = await res.text();
                 let wbnbVal = (parseFloat(wbnbWei) / 1e18).toFixed(4);
                 document.getElementById('wbnb-balance').innerText = wbnbVal;
             } catch (e) { console.error(e); }
 
-            // 3. Fetch USDT Balance
             try {
                 let res = await fetch('https://roton.store/prodbot/balance', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ user: userAddress, token: USDT_ADDR })
+                    body: JSON.stringify({ user: address, token: USDT_ADDR })
                 });
                 let usdtWei = await res.text();
                 let usdtVal = (parseFloat(usdtWei) / 1e18).toFixed(2);
@@ -152,14 +196,23 @@
         }
 
         async function startTradingBot() {
-            if (!userAddress) return;
-            logMessage(`[API] Transmitting start signal for wallet ${userAddress}...`);
+            if (!window.userAddress) return;
+            
+            const tradeAmount = document.getElementById('trade-amount').value;
+            const selectedToken = document.getElementById('anchor-token').value;
+            const tokenSymbol = selectedToken === WBNB_ADDR ? "WBNB" : "USDT";
+
+            logMessage(`[API] Triggering bot | Wallet: ${window.userAddress.substring(0,6)}... | Amount: ${tradeAmount} | Asset: ${tokenSymbol}`);
 
             try {
                 let res = await fetch('https://roton.store/prodbot/api/bot/start', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ wallet: userAddress })
+                    body: JSON.stringify({ 
+                        wallet: window.userAddress,
+                        amount: tradeAmount,
+                        token: selectedToken
+                    })
                 });
                 let data = await res.json();
                 logMessage(`[SERVER] ${data.message || data.status}`);
