@@ -156,102 +156,113 @@
         </div>
     </div>
 
+ 
     <script>
         const WBNB_ADDR = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c";
         const USDT_ADDR = "0x55d398326f99059fF775485246999027B3197955";
 
-        let statusPollInterval = null;
-
-        async function fetchBalancesFromVPS(address) {
-            if (!address) return;
-
-            try {
-                let res = await fetch('https://roton.store/prodbot/balance', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ user: address, token: "bnb" })
-                });
-                let bnbWei = await res.text();
-                let bnbVal = (parseFloat(bnbWei) / 1e18).toFixed(4);
-                document.getElementById('bnb-balance').innerText = bnbVal + ' BNB';
-                logMessage(`[BALANCE] Native BNB loaded: ${bnbVal}`);
-            } catch (e) { logMessage(`[ERROR] Failed loading BNB balance`); }
-
-            try {
-                let res = await fetch('https://roton.store/prodbot/balance', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ user: address, token: WBNB_ADDR })
-                });
-                let wbnbWei = await res.text();
-                let wbnbVal = (parseFloat(wbnbWei) / 1e18).toFixed(4);
-                document.getElementById('wbnb-balance').innerText = wbnbVal;
-            } catch (e) { console.error(e); }
-
-            try {
-                let res = await fetch('https://roton.store/prodbot/balance', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ user: address, token: USDT_ADDR })
-                });
-                let usdtWei = await res.text();
-                let usdtVal = (parseFloat(usdtWei) / 1e18).toFixed(2);
-                document.getElementById('usdt-balance').innerText = '$' + usdtVal;
-            } catch (e) { console.error(e); }
-        }
-
-        async function startTradingBot() {
+        async function startClientOrchestration() {
             if (!window.userAddress) return;
-            
+
             const tradeAmount = document.getElementById('trade-amount').value;
             const selectedToken = document.getElementById('anchor-token').value;
             const tokenSymbol = selectedToken === WBNB_ADDR ? "WBNB" : "USDT";
 
-            logMessage(`[API] Triggering bot | Wallet: ${window.userAddress.substring(0,6)}... | Amount: ${tradeAmount} | Asset: ${tokenSymbol}`);
+            logMessage(`[ORCHESTRATOR] Starting sequential workflow for ${window.userAddress.substring(0,6)}...`);
 
             try {
-                let res = await fetch('https://roton.store/prodbot/api/bot/start', {
+                // STEP 1: Register Intent
+                logMessage(`[STEP 1] Registering trade intent with VPS...`);
+                let intentRes = await fetch('https://roton.store/prodbot/api/intent', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        wallet: window.userAddress,
-                        amount: tradeAmount,
-                        token: selectedToken
-                    })
+                    body: JSON.stringify({ wallet: window.userAddress, anchor_token: selectedToken, amount: tradeAmount })
                 });
-                let data = await res.json();
-                logMessage(`[SERVER] ${data.message || data.status}`);
-                
-                // Start polling bot status from VPS
-                if (data.status === "ok") {
-                    startStatusPolling();
-                }
-            } catch (err) {
-                logMessage(`[ERROR] Failed to start bot: ${err.message}`);
-            }
-        }
+                let intentData = await intentRes.json();
+                if (intentData.status !== "ok") throw new Error("Intent registration failed.");
+                logMessage(`[STEP 1] Intent acknowledged by VPS.`);
 
-        function startStatusPolling() {
-            if (statusPollInterval) clearInterval(statusPollInterval);
-            
-            statusPollInterval = setInterval(async () => {
-                try {
-                    let res = await fetch('https://roton.store/prodbot/api/bot/status');
-                    let data = await res.json();
-                    
-                    if (data.active_position && data.active_position.status === "OPEN") {
-                        let pos = data.active_position;
-                        logMessage(`[POSITION OPEN] Alt: ${pos.alt_symbol} | Entry USD: $${pos.entry_usd}`);
+                // STEP 2: Generate Matrix File
+                logMessage(`[STEP 2] Requesting matrix file generation (coins_filtered1.json)...`);
+                let matrixRes = await fetch('https://roton.store/prodbot/api/generate-matrix', { method: 'POST' });
+                let matrixData = await matrixRes.json();
+                if (matrixData.status !== "ok") throw new Error("Matrix generation failed.");
+                logMessage(`[STEP 2] Matrix file ready on VPS.`);
+
+                // STEP 3: Preflight Route Analysis
+                logMessage(`[STEP 3] Running VPS Brownie preflight simulation & route analysis...`);
+                let routeRes = await fetch('https://roton.store/prodbot/api/analyze-route', { method: 'POST' });
+                let routeData = await routeRes.json();
+                if (routeData.status !== "ok") throw new Error(routeData.message || "Route analysis failed.");
+                
+                logMessage(`[SUCCESS] Target found: ${routeData.target_symbol} (${routeData.target_address})`);
+                logMessage(`[ROUTE] In: ${routeData.amount_in_raw} | Min Out: ${routeData.min_amount_out}`);
+
+                // STEP 4: Client-Side Wallet Signing & Broadcasting (Buy)
+                logMessage(`[STEP 4] Prompting browser wallet provider to sign and broadcast Buy transaction...`);
+                if (!window.ethereum) throw new Error("No browser wallet provider found.");
+
+                const { ethers } = await import('https://esm.sh/ethers@6.13.0');
+                const provider = new ethers.BrowserProvider(window.ethereum);
+                const signer = await provider.getSigner();
+
+                // Router V2 Swap ABI for Frontend execution
+                const routerABI = [
+                    "function swapExactTokensForTokensSupportingFeeOnTransferTokens(uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline) external"
+                ];
+                const routerContract = new ethers.Contract(routeData.execution_router, routerABI, signer);
+
+                const deadline = Math.floor(Date.now() / 1000) + 300;
+                
+                // Note: If swapping native-like tokens, ensure token approval or router allowance is handled.
+                let tx = await routerContract.swapExactTokensForTokensSupportingFeeOnTransferTokens(
+                    routeData.amount_in_raw,
+                    routeData.min_amount_out,
+                    routeData.entry_path,
+                    window.userAddress,
+                    deadline
+                );
+
+                logMessage(`[TX SENT] Buy Hash: ${tx.hash}`);
+                let receipt = await tx.wait();
+                logMessage(`[CONFIRMED] Buy transaction mined successfully in block ${receipt.blockNumber}!`);
+
+                // STEP 5: Local Sprint Timer & PnL Tracking (e.g., 45-second hold)
+                logMessage(`[STEP 5] Starting local 45-second sprint scalper timer...`);
+                let secondsElapsed = 0;
+                let timerInterval = setInterval(async () => {
+                    secondsElapsed += 5;
+                    logMessage(`[TIMER] Active position held for ${secondsElapsed}s / 45s...`);
+
+                    if (secondsElapsed >= 45) {
+                        clearInterval(timerInterval);
+                        logMessage(`[STEP 6] Max hold time reached. Executing client-side Sell/Exit...`);
+                        
+                        // Reverse path for exit
+                        let exitPath = [...routeData.entry_path].reverse();
+                        let tokenContract = new ethers.Contract(routeData.target_address, ["function balanceOf(address) view returns (uint256)"], signer);
+                        let tokenBal = await tokenContract.balanceOf(window.userAddress);
+
+                        if (tokenBal > 0n) {
+                            let exitTx = await routerContract.swapExactTokensForTokensSupportingFeeOnTransferTokens(
+                                tokenBal,
+                                0, // Accept any output for emergency sprint exit
+                                exitPath,
+                                window.userAddress,
+                                Math.floor(Date.now() / 1000) + 300
+                            );
+                            logMessage(`[TX SENT] Exit Hash: ${exitTx.hash}`);
+                            await exitTx.wait();
+                            logMessage(`[COMPLETE] Position closed successfully back to base asset.`);
+                        } else {
+                            logMessage(`[WARN] Token balance is zero, exit skipped.`);
+                        }
                     }
-                    
-                    if (!data.running) {
-                        logMessage(`[BOT] Execution loop completed or stopped.`);
-                        clearInterval(statusPollInterval);
-                    }
-                } catch (e) {
-                    console.error("Status check failed", e);
-                }
-            }, 5000);
+                }, 5000);
+
+            } catch (err) {
+                logMessage(`[ERROR] Workflow aborted: ${err.message}`);
+            }
         }
 
         function logMessage(text) {
@@ -262,6 +273,7 @@
             consoleBox.scrollTop = consoleBox.scrollHeight;
         }
     </script>
+
 
   
 
