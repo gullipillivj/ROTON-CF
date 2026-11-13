@@ -158,7 +158,7 @@
 
  
   
-    <script type="module">
+      <script type="module">
         import { createAppKit } from 'https://esm.sh/@reown/appkit';
         import { EthersAdapter } from 'https://esm.sh/@reown/appkit-adapter-ethers';
         import { mainnet, bsc } from 'https://esm.sh/@reown/appkit/networks';
@@ -204,47 +204,46 @@
                 startBtn.innerText = "Start Trading Orchestration";
 
                 logMessage(`[WALLET] Connected successfully: ${state.address}`);
-                fetchBalancesFromVPS(state.address);
+                fetchWalletBalances(state.address);
             }
         });
 
         const WBNB_ADDR = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c";
         const USDT_ADDR = "0x55d398326f99059fF775485246999027B3197955";
 
-        window.fetchBalancesFromVPS = async function(address) {
+        async function fetchWalletBalances(address) {
             if (!address) return;
             try {
-                let res = await fetch('https://roton.store/prodbot/balance', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ user: address, token: "bnb" })
-                });
-                let bnbWei = await res.text();
-                document.getElementById('bnb-balance').innerText = (parseFloat(bnbWei) / 1e18).toFixed(4) + ' BNB';
-            } catch (e) { logMessage(`[ERROR] Failed loading BNB balance`); }
+                const rawProvider = window.walletprovider || modal.getWalletProvider();
+                if (!rawProvider) {
+                    logMessage(`[WARN] Wallet provider not ready yet for balance check.`);
+                    return;
+                }
 
-            try {
-                let res = await fetch('https://roton.store/prodbot/balance', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ user: address, token: WBNB_ADDR })
-                });
-                let wbnbWei = await res.text();
-                document.getElementById('wbnb-balance').innerText = (parseFloat(wbnbWei) / 1e18).toFixed(4);
-            } catch (e) {}
+                const provider = new ethers.BrowserProvider(rawProvider);
 
-            try {
-                let res = await fetch('https://roton.store/prodbot/balance', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ user: address, token: USDT_ADDR })
-                });
-                let usdtWei = await res.text();
-                document.getElementById('usdt-balance').innerText = '$' + (parseFloat(usdtWei) / 1e18).toFixed(2);
-            } catch (e) {}
+                // 1. Native BNB Balance
+                const bnbWei = await provider.getBalance(address);
+                document.getElementById('bnb-balance').innerText = (parseFloat(ethers.formatEther(bnbWei))).toFixed(4) + ' BNB';
+
+                // 2. WBNB Balance
+                const erc20Abi = ["function balanceOf(address owner) view returns (uint256)"];
+                const wbnbContract = new ethers.Contract(WBNB_ADDR, erc20Abi, provider);
+                const wbnbBal = await wbnbContract.balanceOf(address);
+                document.getElementById('wbnb-balance').innerText = (parseFloat(ethers.formatUnits(wbnbBal, 18))).toFixed(4);
+
+                // 3. USDT Balance
+                const usdtContract = new ethers.Contract(USDT_ADDR, erc20Abi, provider);
+                const usdtBal = await usdtContract.balanceOf(address);
+                document.getElementById('usdt-balance').innerText = '$' + (parseFloat(ethers.formatUnits(usdtBal, 18))).toFixed(2);
+
+                logMessage(`[BALANCES] Synchronized successfully from connected wallet.`);
+            } catch (e) {
+                logMessage(`[ERROR] Balance sync failed: ${e.message}`);
+            }
         }
 
-        window.executeClientOrchestration = async function() {
+        async function executeClientOrchestration() {
             if (!window.userAddress) return;
 
             const tradeAmount = document.getElementById('trade-amount').value;
@@ -350,6 +349,7 @@
             consoleBox.scrollTop = consoleBox.scrollHeight;
         }
     </script>
+
 
 
   
