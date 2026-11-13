@@ -160,6 +160,8 @@
         const WBNB_ADDR = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c";
         const USDT_ADDR = "0x55d398326f99059fF775485246999027B3197955";
 
+        let statusPollInterval = null;
+
         async function fetchBalancesFromVPS(address) {
             if (!address) return;
 
@@ -219,9 +221,37 @@
                 });
                 let data = await res.json();
                 logMessage(`[SERVER] ${data.message || data.status}`);
+                
+                // Start polling bot status from VPS
+                if (data.status === "ok") {
+                    startStatusPolling();
+                }
             } catch (err) {
                 logMessage(`[ERROR] Failed to start bot: ${err.message}`);
             }
+        }
+
+        function startStatusPolling() {
+            if (statusPollInterval) clearInterval(statusPollInterval);
+            
+            statusPollInterval = setInterval(async () => {
+                try {
+                    let res = await fetch('https://roton.store/prodbot/api/bot/status');
+                    let data = await res.json();
+                    
+                    if (data.active_position && data.active_position.status === "OPEN") {
+                        let pos = data.active_position;
+                        logMessage(`[POSITION OPEN] Alt: ${pos.alt_symbol} | Entry USD: $${pos.entry_usd}`);
+                    }
+                    
+                    if (!data.running) {
+                        logMessage(`[BOT] Execution loop completed or stopped.`);
+                        clearInterval(statusPollInterval);
+                    }
+                } catch (e) {
+                    console.error("Status check failed", e);
+                }
+            }, 5000);
         }
 
         function logMessage(text) {
@@ -232,5 +262,10 @@
             consoleBox.scrollTop = consoleBox.scrollHeight;
         }
     </script>
+
+  
+
+
+
   </body>
 </html>
