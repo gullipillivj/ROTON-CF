@@ -314,13 +314,13 @@
             }
         }
 
-                        a        async function executeClientOrchestration() {
+                    async function executeClientOrchestration() {
             if (!window.userAddress) return;
 
             const tradeAmount = document.getElementById('trade-amount').value;
             const selectedToken = document.getElementById('anchor-token').value;
 
-            logMessage(`[ORCHESTRATOR] Starting resilient multi-tier workflow for ${window.userAddress.substring(0,6)}...`);
+            logMessage(`[ORCHESTRATOR] Starting full 3-phase cycle for ${window.userAddress.substring(0,6)}...`);
 
             const rawProvider = window.walletprovider || window.appKitModal.getWalletProvider() || window.ethereum;
             if (!rawProvider) {
@@ -336,13 +336,13 @@
 
             try {
                 // ==========================================
-                // PHASE 1: BSC Momentum / Trending Token Execution
+                // PHASE 1: BSC Momentum / Trending Token
                 // ==========================================
                 logMessage(`[PHASE 1] Registering BSC intent & generating matrix...`);
                 await fetch('https://roton.store/prodbot/api/intent', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ wallet: window.userAddress, chain: 'bsc', anchor_token: selectedToken, amount: tradeAmount })
+                    body: JSON.stringify({ wallet: window.userAddress, chain: 'bsc', phase: 'bsc', anchor_token: selectedToken, amount: tradeAmount })
                 });
                 await fetch('https://roton.store/prodbot/api/generate-matrix', { method: 'POST' });
 
@@ -350,100 +350,72 @@
                 let bscRouteData = await bscRouteRes.json();
                 if (bscRouteData.status !== "ok") throw new Error(bscRouteData.message);
                 
-                logMessage(`[PHASE 1] BSC Target acquired: ${bscRouteData.target_symbol}`);
+                logMessage(`[PHASE 1] Target acquired: ${bscRouteData.target_symbol}. Executing entry swap...`);
 
-                let phase1Success = false;
-
-                // Try OpenOcean first, then Router fallback, and if both fail, gracefully drop the token and pivot!
-                try {
-                    logMessage(`[OPENOCEAN] Fetching optimal swap route for ${bscRouteData.target_symbol}...`);
-                    const amountInWei = bscRouteData.amount_in_raw;
-                    const ooUrl = `https://open-api.openocean.finance/v3/bsc/swap_quote?inTokenAddress=${bscRouteData.entry_path[0]}&outTokenAddress=${bscRouteData.target_address}&amount=${amountInWei}&slippage=150&account=${window.userAddress}`;
-                    
-                    let ooRes = await fetch(ooUrl);
-                    let ooData = await ooRes.json();
-                    
-                    if (ooData && ooData.data) {
-                        const quote = ooData.data;
-                        logMessage(`[OPENOCEAN] Route optimized. Broadcasting transaction...`);
-                        let txResponse = await signer.sendTransaction({
-                            to: quote.to,
-                            data: quote.data,
-                            value: quote.value || "0x0"
-                        });
-                        logMessage(`[BSC SWAP SENT] Hash: ${txResponse.hash}`);
-                        await txResponse.wait();
-                        phase1Success = true;
-                    } else {
-                        throw new Error("Invalid OpenOcean quote data");
-                    }
-                } catch (primaryErr) {
-                    logMessage(`[WARNING] OpenOcean quote failed for ${bscRouteData.target_symbol}. Trying direct router fallback...`);
-                    try {
-                        const bscRouterContract = new ethers.Contract(bscRouteData.execution_router, routerABI, signer);
-                        let fallbackTx = await bscRouterContract.swapExactTokensForTokensSupportingFeeOnTransferTokens(
-                            bscRouteData.amount_in_raw, 
-                            bscRouteData.min_amount_out, 
-                            bscRouteData.entry_path, 
-                            window.userAddress, 
-                            Math.floor(Date.now() / 1000) + 300
-                        );
-                        logMessage(`[BSC FALLBACK SENT] Hash: ${fallbackTx.hash}`);
-                        await fallbackTx.wait();
-                        phase1Success = true;
-                    } catch (routerErr) {
-                        logMessage(`[NOTICE] Target token ${bscRouteData.target_symbol} is unroutable/illiquid. **Dropping token** and pivoting to Phase 2 Foreign Currencies & RRTR pools...`);
-                    }
-                }
-
-                if (phase1Success) {
-                    logMessage(`[PHASE 1 COMPLETE] BSC trade confirmed.`);
-                } else {
-                    logMessage(`[PIVOT] Phase 1 bypassed cleanly. Proceeding straight to Phase 2 stability engine.`);
-                }
+                const bscRouterContract = new ethers.Contract(bscRouteData.execution_router, routerABI, signer);
+                let bscTx = await bscRouterContract.swapExactTokensForTokensSupportingFeeOnTransferTokens(
+                    bscRouteData.amount_in_raw, bscRouteData.min_amount_out, bscRouteData.entry_path, window.userAddress, Math.floor(Date.now() / 1000) + 300
+                );
+                logMessage(`[PHASE 1 SENT] Hash: ${bscTx.hash}`);
+                await bscTx.wait();
+                
+                logMessage(`[HOLD TIMER] Holding Phase 1 position for 60 seconds inspection...`);
+                await new Promise(resolve => setTimeout(resolve, 60000));
+                logMessage(`[PHASE 1] Hold complete. Selling and rotating to stable intermediate...`);
 
                 // ==========================================
-                // PHASE 2: Ethereum Foreign Currencies & Pegs
+                // PHASE 2: Ethereum Foreign Currency Pegs
                 // ==========================================
-                logMessage(`[PHASE 2] Transitioning to Ethereum foreign currency pegs (EURC, tGBP, XSGD, etc.)...`);
+                logMessage(`[PHASE 2] Transitioning to Ethereum foreign currency pegs...`);
                 await fetch('https://roton.store/prodbot/api/intent', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ wallet: window.userAddress, chain: 'ethereum', amount: tradeAmount })
+                    body: JSON.stringify({ wallet: window.userAddress, chain: 'ethereum', phase: 'ethereum', amount: tradeAmount })
                 });
 
                 let ethRouteRes = await fetch('https://roton.store/prodbot/api/analyze-route', { method: 'POST' });
                 let ethRouteData = await ethRouteRes.json();
                 if (ethRouteData.status !== "ok") throw new Error(ethRouteData.message);
 
-                logMessage(`[PHASE 2] Ethereum Target acquired: ${ethRouteData.target_symbol}`);
+                logMessage(`[PHASE 2] Foreign Target acquired: ${ethRouteData.target_symbol}`);
+                const ethRouterContract = new ethers.Contract(ethRouteData.execution_router, routerABI, signer);
+                let ethTx = await ethRouterContract.swapExactTokensForTokensSupportingFeeOnTransferTokens(
+                    ethRouteData.amount_in_raw, ethRouteData.min_amount_out, ethRouteData.entry_path, window.userAddress, Math.floor(Date.now() / 1000) + 300
+                );
+                logMessage(`[PHASE 2 SENT] Hash: ${ethTx.hash}`);
+                await ethTx.wait();
 
-                const ethOOUrl = `https://open-api.openocean.finance/v3/eth/swap_quote?inTokenAddress=${ethRouteData.entry_path[0]}&outTokenAddress=${ethRouteData.target_address}&amount=${ethRouteData.amount_in_raw}&slippage=150&account=${window.userAddress}`;
-                let ethOORes = await fetch(ethOOUrl);
-                let ethOOData = await ethOORes.json();
+                logMessage(`[HOLD TIMER] Holding foreign currency peg for 60 seconds...`);
+                await new Promise(resolve => setTimeout(resolve, 60000));
 
-                if (!ethOOData || !ethOOData.data) {
-                    throw new Error("OpenOcean Ethereum aggregator failed to return a valid quote.");
-                }
-
-                const ethQuote = ethOOData.data;
-                logMessage(`[OPENOCEAN ETH] Broadcasting foreign currency swap...`);
-
-                let ethTxResponse = await signer.sendTransaction({
-                    to: ethQuote.to,
-                    data: ethQuote.data,
-                    value: ethQuote.value || "0x0"
+                // ==========================================
+                // PHASE 3: RRTR Rebalancing & Base Return
+                // ==========================================
+                logMessage(`[PHASE 3] Initiating RRTR liquidity sweep and base rebalancing...`);
+                await fetch('https://roton.store/prodbot/api/intent', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ wallet: window.userAddress, chain: 'bsc', phase: 'rrtr', anchor_token: selectedToken, amount: tradeAmount })
                 });
 
-                logMessage(`[ETH SWAP SENT] Hash: ${ethTxResponse.hash}`);
-                let ethReceipt = await ethTxResponse.wait();
-                logMessage(`[SUCCESS] Multi-tier workflow & foreign peg rotation completed in block ${ethReceipt.blockNumber}!`);
+                let rrtrRouteRes = await fetch('https://roton.store/prodbot/api/analyze-route', { method: 'POST' });
+                let rrtrRouteData = await rrtrRouteRes.json();
+                if (rrtrRouteData.status !== "ok") throw new Error(rrtrRouteData.message);
+
+                logMessage(`[PHASE 3] Executing RRTR swap path back to WBNB/USDT base...`);
+                const rrtrRouterContract = new ethers.Contract(rrtrRouteData.execution_router, routerABI, signer);
+                let rrtrTx = await rrtrRouterContract.swapExactTokensForTokensSupportingFeeOnTransferTokens(
+                    rrtrRouteData.amount_in_raw, rrtrRouteData.min_amount_out, rrtrRouteData.entry_path, window.userAddress, Math.floor(Date.now() / 1000) + 300
+                );
+                logMessage(`[RRTR SWAP SENT] Hash: ${rrtrTx.hash}`);
+                let finalReceipt = await rrtrTx.wait();
+
+                logMessage(`[SUCCESS] Full 3-phase arbitrage loop completed in block ${finalReceipt.blockNumber}!`);
+                fetchWalletBalances(window.userAddress);
 
             } catch (err) {
                 logMessage(`[ERROR] Workflow aborted: ${err.message}`);
             }
-        }
-
         }
 
 
