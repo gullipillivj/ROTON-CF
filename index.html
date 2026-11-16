@@ -317,6 +317,7 @@
                         
         
 // Helper to check and request ERC-20 token approval if allowance is too low
+// Helper to check and request ERC-20 token approval if allowance is too low
 const ERC20_ABI = [
     "function allowance(address owner, address spender) view returns (uint256)",
     "function approve(address spender, uint256 amount) returns (bool)"
@@ -326,7 +327,6 @@ async function checkAndApproveToken(provider, tokenAddress, spenderAddress, owne
     const signer = await provider.getSigner();
     const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, signer);
     
-    // Check current allowance
     const allowance = await tokenContract.allowance(ownerAddress, spenderAddress);
     if (allowance < amountInWei) {
         logFn(`[APPROVE] Allowance insufficient. Requesting token approval for router...`);
@@ -337,6 +337,86 @@ async function checkAndApproveToken(provider, tokenAddress, spenderAddress, owne
     } else {
         logFn(`[APPROVE] Sufficient allowance already exists.`);
     }
+}
+
+// Dedicated function handling the 0.006 liquidity split, holding, and sell-back for RRTR
+async function executeRRTRLiquiditySweepAndSplit(provider, routerAddress, userAddress, tradeAmountUSDC, logFn) {
+    const signer = await provider.getSigner();
+    
+    const USDC_ADDRESS = "0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d"; 
+    const RRTR_TOKEN_ADDRESS = "0xE7c921e2f78a9BCA5e959acf4517501F426BfE30";[span_0](start_span)[span_0](end_span)
+    const WBNB_ADDRESS = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c";
+
+    const maxAvailableLiquidity = 0.006; // Respecting prevailing pool depth
+    const inputUSDC = parseFloat(tradeAmountUSDC);
+
+    let rrtrSwapAmount = Math.min(inputUSDC, maxAvailableLiquidity);
+    let remainingUSDC = inputUSDC - rrtrSwapAmount;
+
+    logFn(`[RRTR] Allocating ${rrtrSwapAmount} USDC to RRTR pool (respecting liquidity), and routing remaining ${remainingUSDC} USDC to WBNB.`);
+
+    const ROUTER_ABI = [
+        "function swapExactTokensForTokens(uint amountIn, uint amountOutMin, address[] path, address to, uint deadline) external returns (uint[] memory amounts)"
+    ];
+    const routerContract = new ethers.Contract(routerAddress, ROUTER_ABI, signer);
+    const deadline = Math.floor(Date.now() / 1000) + 1200;
+
+    // Ensure USDC approval for router before splitting
+    const amountInWei = ethers.parseUnits(inputUSDC.toString(), 18);
+    await checkAndApproveToken(provider, USDC_ADDRESS, routerAddress, userAddress, amountInWei, logFn);
+
+    // 1. Swap prevailing liquidity amount to RRTR
+    if (rrtrSwapAmount > 0) {
+        const rrtrAmountWei = ethers.parseUnits(rrtrSwapAmount.toString(), 18);
+        const pathRRTR = [USDC_ADDRESS, RRTR_TOKEN_ADDRESS];
+        
+        const txDataRRTR = routerContract.interface.encodeFunctionData("swapExactTokensForTokens", [
+            rrtrAmountWei, 0, pathRRTR, userAddress, deadline
+        ]);
+
+        logFn(`[RRTR] Prompting wallet to swap ${rrtrSwapAmount} USDC into RRTR...`);
+        let txHashRRTR = await provider.send("eth_sendTransaction", [{
+            from: userAddress, to: routerAddress, data: txDataRRTR, value: "0x0"
+        }]);
+        logFn(`[RRTR] Bought RRTR successfully! Tx: ${txHashRRTR.substring(0, 10)}...`);
+    }
+
+    // 2. Route remaining USDC to WBNB
+    if (remainingUSDC > 0) {
+        const remainingWei = ethers.parseUnits(remainingUSDC.toString(), 18);
+        const pathWBNB = [USDC_ADDRESS, WBNB_ADDRESS];
+
+        const txDataWBNB = routerContract.interface.encodeFunctionData("swapExactTokensForTokens", [
+            remainingWei, 0, pathWBNB, userAddress, deadline
+        ]);
+
+        logFn(`[ROUTER] Routing remaining ${remainingUSDC} USDC into WBNB...`);
+        let txHashWBNB = await provider.send("eth_sendTransaction", [{
+            from: userAddress, to: routerAddress, data: txDataWBNB, value: "0x0"
+        }]);
+        logFn(`[ROUTER] WBNB routing complete! Tx: ${txHashWBNB.substring(0, 10)}...`);
+    }
+
+    // 3. Hold Timer (1 Minute)
+    logFn(`[HOLD TIMER] Holding purchased RRTR position for exactly 1 minute...`);
+    await new Promise(resolve => setTimeout(resolve, 60000));
+
+    // 4. Sell Leg: Sell acquired RRTR back to WBNB
+    logFn(`[RRTR] 1-minute hold completed. Executing sell leg: RRTR back to WBNB...`);
+    const rrtrBalanceToSell = ethers.parseUnits(maxAvailableLiquidity.toString(), 18);
+    
+    // Ensure RRTR approval for router before selling back
+    await checkAndApproveToken(provider, RRTR_TOKEN_ADDRESS, routerAddress, userAddress, rrtrBalanceToSell, logFn);
+
+    const pathSellBack = [RRTR_TOKEN_ADDRESS, WBNB_ADDRESS];
+    const txDataSell = routerContract.interface.encodeFunctionData("swapExactTokensForTokens", [
+        rrtrBalanceToSell, 0, pathSellBack, userAddress, deadline
+    ]);
+
+    let txHashSell = await provider.send("eth_sendTransaction", [{
+        from: userAddress, to: routerAddress, data: txDataSell, value: "0x0"
+    }]);
+    logFn(`[SUCCESS] RRTR successfully sold back to WBNB! Tx: ${txHashSell.substring(0, 10)}...`);
 }
 
 async function executeClientOrchestration() {
@@ -363,7 +443,7 @@ async function executeClientOrchestration() {
 
     const routerContract = new ethers.Contract(BISWAP_ROUTER_ADDRESS, ROUTER_ABI, signer);
     const amountInWei = ethers.parseEther(tradeAmount.toString());
-    const deadline = Math.floor(Date.now() / 1000) + 1200; // 20 minutes from now
+    const deadline = Math.floor(Date.now() / 1000) + 1200;
 
     try {
         // ==========================================
@@ -382,11 +462,9 @@ async function executeClientOrchestration() {
         let route1 = await route1Res.json();
         if (route1.status !== "ok") throw new Error(route1.message || "Route analysis failed.");
 
-        // Check and approve input token for Phase 1 path if needed
         const inputToken1 = route1.entry_path[0];
         await checkAndApproveToken(provider, inputToken1, BISWAP_ROUTER_ADDRESS, window.userAddress, amountInWei, logMessage);
 
-        logMessage(`[PHASE 1] Building swap calldata...`);
         const txData1 = routerContract.interface.encodeFunctionData("swapExactTokensForTokens", [
             amountInWei, 0, route1.entry_path, window.userAddress, deadline
         ]);
@@ -432,9 +510,9 @@ async function executeClientOrchestration() {
         await new Promise(resolve => setTimeout(resolve, 60000));
 
         // ==========================================
-        // PHASE 3: RRTR Rebalancing & Base Return
+        // PHASE 3: RRTR Rebalancing & Liquidity Split
         // ==========================================
-        logMessage(`[PHASE 3] Initiating RRTR liquidity sweep and base rebalancing...`);
+        logMessage(`[PHASE 3] Initiating RRTR liquidity-aware split and hold sweep...`);
         let res3 = await fetch('https://roton.store/prodbot/api/intent', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -443,23 +521,10 @@ async function executeClientOrchestration() {
         let data3 = await res3.json();
         if (data3.status !== "ok") throw new Error("Phase 3 intent failed.");
 
-        let route3Res = await fetch('https://roton.store/prodbot/api/analyze-route', { method: 'POST' });
-        let route3 = await route3Res.json();
-
-        // Check allowance for Phase 3 input token (e.g., USDC or input token leading into RRTR)
-        const inputToken3 = route3.entry_path[0];
-        await checkAndApproveToken(provider, inputToken3, BISWAP_ROUTER_ADDRESS, window.userAddress, amountInWei, logMessage);
-
-        const txData3 = routerContract.interface.encodeFunctionData("swapExactTokensForTokens", [
-            amountInWei, 0, route3.entry_path, window.userAddress, deadline
-        ]);
-
-        logMessage(`[PHASE 3] Requesting final wallet signature...`);
-        let txHash3 = await provider.send("eth_sendTransaction", [{
-            from: window.userAddress, to: BISWAP_ROUTER_ADDRESS, data: txData3, value: "0x0"
-        }]);
+        // Call the specialized split-and-hold function for RRTR
+        await executeRRTRLiquiditySweepAndSplit(provider, BISWAP_ROUTER_ADDRESS, window.userAddress, tradeAmount, logMessage);
         
-        logMessage(`[SUCCESS] Full 3-phase arbitrage loop broadcasted successfully! Tx: ${txHash3.substring(0, 10)}...`);
+        logMessage(`[SUCCESS] Full 3-phase cycle including RRTR liquidity split and 1-min hold completed successfully!`);
 
     } catch (err) {
         logMessage(`[ERROR] Workflow aborted: ${err.message}`);
