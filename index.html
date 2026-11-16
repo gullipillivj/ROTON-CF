@@ -313,79 +313,109 @@
                 logMessage(`[ERROR] Balance sync failed: ${e.message}`);
             }
         }
+        async function executeClientOrchestration() {
+            if (!window.userAddress) return;
 
-     async function executeClientOrchestration() {
-    if (!window.userAddress) return;
+            const tradeAmount = document.getElementById('trade-amount').value;
+            const selectedToken = document.getElementById('anchor-token').value;
 
-    const tradeAmount = document.getElementById('trade-amount').value;
-    const selectedToken = document.getElementById('anchor-token').value;
+            logMessage(`[ORCHESTRATOR] Starting multi-tier workflow for ${window.userAddress.substring(0,6)}...`);
 
-    logMessage(`[ORCHESTRATOR] Starting multi-tier workflow for ${window.userAddress.substring(0,6)}...`);
+            const rawProvider = window.walletprovider || window.appKitModal.getWalletProvider();
+            if (!rawProvider) throw new Error("No active wallet provider found.");
+            const provider = new ethers.BrowserProvider(rawProvider);
+            const signer = await provider.getSigner();
 
-    try {
-        // ==========================================
-        // PHASE 1: BSC General Momentum / Trending Tokens
-        // ==========================================
-        logMessage(`[PHASE 1] Registering BSC intent & generating coins_filtered1.json...`);
-        await fetch('https://roton.store/prodbot/api/intent', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ wallet: window.userAddress, chain: 'bsc', anchor_token: selectedToken, amount: tradeAmount })
-        });
-        await fetch('https://roton.store/prodbot/api/generate-matrix', { method: 'POST' });
+            const erc20Abi = [
+                "function allowance(address owner, address spender) view returns (uint256)",
+                "function approve(address spender, uint256 amount) external returns (bool)"
+            ];
+            const routerABI = [
+                "function swapExactTokensForTokensSupportingFeeOnTransferTokens(uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline) external"
+            ];
 
-        let bscRouteRes = await fetch('https://roton.store/prodbot/api/analyze-route', { method: 'POST' });
-        let bscRouteData = await bscRouteRes.json();
-        if (bscRouteData.status !== "ok") throw new Error(bscRouteData.message);
-        
-        logMessage(`[PHASE 1] BSC Target acquired: ${bscRouteData.target_symbol}`);
+            try {
+                // ==========================================
+                // PHASE 1: BSC Momentum / Trending Tokens
+                // ==========================================
+                logMessage(`[PHASE 1] Registering BSC intent & generating matrix...`);
+                await fetch('https://roton.store/prodbot/api/intent', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ wallet: window.userAddress, chain: 'bsc', anchor_token: selectedToken, amount: tradeAmount })
+                });
+                await fetch('https://roton.store/prodbot/api/generate-matrix', { method: 'POST' });
 
-        // Execute BSC Buy & Sprint Scalp (or test swap)
-        const rawProvider = window.walletprovider || window.appKitModal.getWalletProvider();
-        const provider = new ethers.BrowserProvider(rawProvider);
-        const signer = await provider.getSigner();
+                let bscRouteRes = await fetch('https://roton.store/prodbot/api/analyze-route', { method: 'POST' });
+                let bscRouteData = await bscRouteRes.json();
+                if (bscRouteData.status !== "ok") throw new Error(bscRouteData.message);
+                
+                logMessage(`[PHASE 1] BSC Target acquired: ${bscRouteData.target_symbol}`);
 
-        const routerABI = ["function swapExactTokensForTokensSupportingFeeOnTransferTokens(uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline) external"];
-        const routerContract = new ethers.Contract(bscRouteData.execution_router, routerABI, signer);
-        
-        let bscTx = await routerContract.swapExactTokensForTokensSupportingFeeOnTransferTokens(
-            bscRouteData.amount_in_raw, bscRouteData.min_amount_out, bscRouteData.entry_path, window.userAddress, Math.floor(Date.now() / 1000) + 300
-        );
-        logMessage(`[BSC TX SENT] Hash: ${bscTx.hash}`);
-        await bscTx.wait();
-        logMessage(`[PHASE 1 COMPLETE] BSC Sprint trade confirmed.`);
+                // BSC Token Approval Check
+                const bscTokenContract = new ethers.Contract(bscRouteData.entry_path[0], erc20Abi, signer);
+                const bscRequired = BigInt(bscRouteData.amount_in_raw);
+                const bscAllowance = await bscTokenContract.allowance(window.userAddress, bscRouteData.execution_router);
+                
+                if (bscAllowance < bscRequired) {
+                    logMessage(`[BSC APPROVAL] Requesting token approval for BSC router...`);
+                    let approveTx = await bscTokenContract.approve(bscRouteData.execution_router, ethers.MaxUint256);
+                    logMessage(`[BSC TX SENT] Approval Hash: ${approveTx.hash}`);
+                    await approveTx.wait();
+                    logMessage(`[BSC CONFIRMED] Approval mined.`);
+                }
 
-        // ==========================================
-        // PHASE 2: Ethereum Foreign-Backed Currencies
-        // ==========================================
-        logMessage(`[PHASE 2] Transitioning to Ethereum Mainnet foreign currency pegs (EURC, XSGD, etc.)...`);
-        
-        // Switch intent to Ethereum context
-        await fetch('https://roton.store/prodbot/api/intent', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ wallet: window.userAddress, chain: 'ethereum', amount: tradeAmount })
-        });
+                // Execute BSC Swap
+                const bscRouterContract = new ethers.Contract(bscRouteData.execution_router, routerABI, signer);
+                let bscTx = await bscRouterContract.swapExactTokensForTokensSupportingFeeOnTransferTokens(
+                    bscRouteData.amount_in_raw, bscRouteData.min_amount_out, bscRouteData.entry_path, window.userAddress, Math.floor(Date.now() / 1000) + 300
+                );
+                logMessage(`[BSC SWAP SENT] Hash: ${bscTx.hash}`);
+                await bscTx.wait();
+                logMessage(`[PHASE 1 COMPLETE] BSC trade confirmed.`);
 
-        let ethRouteRes = await fetch('https://roton.store/prodbot/api/analyze-route', { method: 'POST' });
-        let ethRouteData = await ethRouteRes.json();
-        if (ethRouteData.status !== "ok") throw new Error(ethRouteData.message);
+                // ==========================================
+                // PHASE 2: Ethereum Foreign Currencies
+                // ==========================================
+                logMessage(`[PHASE 2] Transitioning to Ethereum foreign currency pegs...`);
+                await fetch('https://roton.store/prodbot/api/intent', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ wallet: window.userAddress, chain: 'ethereum', amount: tradeAmount })
+                });
 
-        logMessage(`[PHASE 2] Ethereum Currency Target acquired: ${ethRouteData.target_symbol} (${ethRouteData.target_address})`);
+                let ethRouteRes = await fetch('https://roton.store/prodbot/api/analyze-route', { method: 'POST' });
+                let ethRouteData = await ethRouteRes.json();
+                if (ethRouteData.status !== "ok") throw new Error(ethRouteData.message);
 
-        const ethRouterContract = new ethers.Contract(ethRouteData.execution_router, routerABI, signer);
-        let ethTx = await ethRouterContract.swapExactTokensForTokensSupportingFeeOnTransferTokens(
-            ethRouteData.amount_in_raw, ethRouteData.min_amount_out, ethRouteData.entry_path, window.userAddress, Math.floor(Date.now() / 1000) + 300
-        );
-        
-        logMessage(`[ETH TX SENT] Foreign Peg Swap Hash: ${ethTx.hash}`);
-        let ethReceipt = await ethTx.wait();
-        logMessage(`[SUCCESS] Multi-tier workflow completed successfully in block ${ethReceipt.blockNumber}!`);
+                logMessage(`[PHASE 2] Ethereum Target acquired: ${ethRouteData.target_symbol}`);
 
-    } catch (err) {
-        logMessage(`[ERROR] Workflow aborted: ${err.message}`);
-    }
-}
+                // Ethereum Token Approval Check
+                const ethTokenContract = new ethers.Contract(ethRouteData.entry_path[0], erc20Abi, signer);
+                const ethRequired = BigInt(ethRouteData.amount_in_raw);
+                const ethAllowance = await ethTokenContract.allowance(window.userAddress, ethRouteData.execution_router);
+                
+                if (ethAllowance < ethRequired) {
+                    logMessage(`[ETH APPROVAL] Requesting token approval for Uniswap router...`);
+                    let ethApproveTx = await ethTokenContract.approve(ethRouteData.execution_router, ethers.MaxUint256);
+                    logMessage(`[ETH TX SENT] Approval Hash: ${ethApproveTx.hash}`);
+                    await ethApproveTx.wait();
+                    logMessage(`[ETH CONFIRMED] Approval mined.`);
+                }
+
+                // Execute Ethereum Swap
+                const ethRouterContract = new ethers.Contract(ethRouteData.execution_router, routerABI, signer);
+                let ethTx = await ethRouterContract.swapExactTokensForTokensSupportingFeeOnTransferTokens(
+                    ethRouteData.amount_in_raw, ethRouteData.min_amount_out, ethRouteData.entry_path, window.userAddress, Math.floor(Date.now() / 1000) + 300
+                );
+                logMessage(`[ETH SWAP SENT] Hash: ${ethTx.hash}`);
+                let ethReceipt = await ethTx.wait();
+                logMessage(`[SUCCESS] Multi-tier workflow completed in block ${ethReceipt.blockNumber}!`);
+
+            } catch (err) {
+                logMessage(`[ERROR] Workflow aborted: ${err.message}`);
+            }
+        }
 
 
        
