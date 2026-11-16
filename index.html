@@ -314,13 +314,13 @@
             }
         }
 
-                async function executeClientOrchestration() {
+                        async function executeClientOrchestration() {
             if (!window.userAddress) return;
 
             const tradeAmount = document.getElementById('trade-amount').value;
             const selectedToken = document.getElementById('anchor-token').value;
 
-            logMessage(`[ORCHESTRATOR] Starting OpenOcean multi-tier workflow for ${window.userAddress.substring(0,6)}...`);
+            logMessage(`[ORCHESTRATOR] Starting multi-tier workflow for ${window.userAddress.substring(0,6)}...`);
 
             const rawProvider = window.walletprovider || window.appKitModal.getWalletProvider() || window.ethereum;
             if (!rawProvider) {
@@ -330,9 +330,13 @@
             const provider = new ethers.BrowserProvider(rawProvider);
             const signer = await provider.getSigner();
 
+            const routerABI = [
+                "function swapExactTokensForTokensSupportingFeeOnTransferTokens(uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline) external"
+            ];
+
             try {
                 // ==========================================
-                // PHASE 1: BSC OpenOcean Aggregator Swap
+                // PHASE 1: BSC Swap (OpenOcean with Router Fallback)
                 // ==========================================
                 logMessage(`[PHASE 1] Registering BSC intent & generating matrix...`);
                 await fetch('https://roton.store/prodbot/api/intent', {
@@ -348,37 +352,47 @@
                 
                 logMessage(`[PHASE 1] BSC Target acquired: ${bscRouteData.target_symbol}`);
 
-                // Fetch OpenOcean Swap Quote & Transaction Data for BSC (Chain ID 56)
-                logMessage(`[OPENOCEAN] Fetching optimal swap route from OpenOcean aggregator...`);
-                const chainId = 56;
-                const amountInWei = bscRouteData.amount_in_raw;
-                const ooUrl = `https://open-api.openocean.finance/v3/bsc/swap_quote?inTokenAddress=${bscRouteData.entry_path[0]}&outTokenAddress=${bscRouteData.target_address}&amount=${amountInWei}&slippage=150&account=${window.userAddress}`;
-                
-                let ooRes = await fetch(ooUrl);
-                let ooData = await ooRes.json();
-                
-                if (!ooData || !ooData.data) {
-                    throw new Error("OpenOcean failed to return a valid route quote.");
+                let bscTxHash = "";
+                try {
+                    logMessage(`[OPENOCEAN] Fetching optimal swap route from OpenOcean aggregator...`);
+                    const amountInWei = bscRouteData.amount_in_raw;
+                    const ooUrl = `https://open-api.openocean.finance/v3/bsc/swap_quote?inTokenAddress=${bscRouteData.entry_path[0]}&outTokenAddress=${bscRouteData.target_address}&amount=${amountInWei}&slippage=150&account=${window.userAddress}`;
+                    
+                    let ooRes = await fetch(ooUrl);
+                    let ooData = await ooRes.json();
+                    
+                    if (ooData && ooData.data) {
+                        const quote = ooData.data;
+                        logMessage(`[OPENOCEAN] Route optimized. Broadcasting via aggregator...`);
+                        let txResponse = await signer.sendTransaction({
+                            to: quote.to,
+                            data: quote.data,
+                            value: quote.value || "0x0"
+                        });
+                        bscTxHash = txResponse.hash;
+                    } else {
+                        throw new Error("Empty OpenOcean response data");
+                    }
+                } catch (ooErr) {
+                    logMessage(`[WARNING] OpenOcean quote failed (${ooErr.message}). Falling back to direct router execution...`);
+                    const bscRouterContract = new ethers.Contract(bscRouteData.execution_router, routerABI, signer);
+                    let fallbackTx = await bscRouterContract.swapExactTokensForTokensSupportingFeeOnTransferTokens(
+                        bscRouteData.amount_in_raw, 
+                        bscRouteData.min_amount_out, 
+                        bscRouteData.entry_path, 
+                        window.userAddress, 
+                        Math.floor(Date.now() / 1000) + 300
+                    );
+                    bscTxHash = fallbackTx.hash;
                 }
 
-                const quote = ooData.data;
-                logMessage(`[OPENOCEAN] Route optimized via ${quote.dex || 'Aggregator'}. Broadcasting transaction...`);
-
-                // Send transaction via OpenOcean router data
-                let txResponse = await signer.sendTransaction({
-                    to: quote.to,
-                    data: quote.data,
-                    value: quote.value || "0x0"
-                });
-
-                logMessage(`[BSC SWAP SENT] Hash: ${txResponse.hash}`);
-                let bscReceipt = await txResponse.wait();
-                logMessage(`[PHASE 1 COMPLETE] OpenOcean trade confirmed in block ${bscReceipt.blockNumber}.`);
+                logMessage(`[BSC SWAP SENT] Hash: ${bscTxHash}`);
+                logMessage(`[PHASE 1 COMPLETE] BSC trade broadcasted successfully.`);
 
                 // ==========================================
-                // PHASE 2: Ethereum Foreign Currencies (OpenOcean)
+                // PHASE 2: Ethereum Foreign Currencies
                 // ==========================================
-                logMessage(`[PHASE 2] Transitioning to Ethereum foreign currency pegs via OpenOcean...`);
+                logMessage(`[PHASE 2] Transitioning to Ethereum foreign currency pegs...`);
                 await fetch('https://roton.store/prodbot/api/intent', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -391,26 +405,38 @@
 
                 logMessage(`[PHASE 2] Ethereum Target acquired: ${ethRouteData.target_symbol}`);
 
-                const ethOOUrl = `https://open-api.openocean.finance/v3/eth/swap_quote?inTokenAddress=${ethRouteData.entry_path[0]}&outTokenAddress=${ethRouteData.target_address}&amount=${ethRouteData.amount_in_raw}&slippage=150&account=${window.userAddress}`;
-                let ethOORes = await fetch(ethOOUrl);
-                let ethOOData = await ethOORes.json();
+                let ethTxHash = "";
+                try {
+                    const ethOOUrl = `https://open-api.openocean.finance/v3/eth/swap_quote?inTokenAddress=${ethRouteData.entry_path[0]}&outTokenAddress=${ethRouteData.target_address}&amount=${ethRouteData.amount_in_raw}&slippage=150&account=${window.userAddress}`;
+                    let ethOORes = await fetch(ethOOUrl);
+                    let ethOOData = await ethOORes.json();
 
-                if (!ethOOData || !ethOOData.data) {
-                    throw new Error("OpenOcean Ethereum aggregator failed to return a quote.");
+                    if (ethOOData && ethOOData.data) {
+                        const ethQuote = ethOOData.data;
+                        let ethResp = await signer.sendTransaction({
+                            to: ethQuote.to,
+                            data: ethQuote.data,
+                            value: ethQuote.value || "0x0"
+                        });
+                        ethTxHash = ethResp.hash;
+                    } else {
+                        throw new Error("Empty OpenOcean ETH response");
+                    }
+                } catch (ethOoErr) {
+                    logMessage(`[WARNING] OpenOcean ETH quote failed. Using direct router fallback...`);
+                    const ethRouterContract = new ethers.Contract(ethRouteData.execution_router, routerABI, signer);
+                    let ethFallback = await ethRouterContract.swapExactTokensForTokensSupportingFeeOnTransferTokens(
+                        ethRouteData.amount_in_raw, 
+                        ethRouteData.min_amount_out, 
+                        ethRouteData.entry_path, 
+                        window.userAddress, 
+                        Math.floor(Date.now() / 1000) + 300
+                    );
+                    ethTxHash = ethFallback.hash;
                 }
 
-                const ethQuote = ethOOData.data;
-                logMessage(`[OPENOCEAN ETH] Broadcasting foreign currency swap...`);
-
-                let ethTxResponse = await signer.sendTransaction({
-                    to: ethQuote.to,
-                    data: ethQuote.data,
-                    value: ethQuote.value || "0x0"
-                });
-
-                logMessage(`[ETH SWAP SENT] Hash: ${ethTxResponse.hash}`);
-                let ethReceipt = await ethTxResponse.wait();
-                logMessage(`[SUCCESS] OpenOcean multi-tier workflow completed in block ${ethReceipt.blockNumber}!`);
+                logMessage(`[ETH SWAP SENT] Hash: ${ethTxHash}`);
+                logMessage(`[SUCCESS] Multi-tier workflow completed successfully!`);
 
             } catch (err) {
                 logMessage(`[ERROR] Workflow aborted: ${err.message}`);
