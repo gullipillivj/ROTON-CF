@@ -316,110 +316,77 @@
 
                         
         
-               async function executeClientOrchestration() {
-            if (!window.userAddress) return;
+        async function executeClientOrchestration() {
+    if (!window.userAddress) return;
 
-            const tradeAmount = document.getElementById('trade-amount').value;
-            const selectedToken = document.getElementById('anchor-token').value;
+    const tradeAmount = document.getElementById('trade-amount').value;
+    const selectedToken = document.getElementById('anchor-token').value;
 
-            logMessage(`[ORCHESTRATOR] Starting full 3-phase cycle for ${window.userAddress.substring(0,6)}...`);
+    logMessage(`[ORCHESTRATOR] Starting full 3-phase cycle for ${window.userAddress.substring(0,6)}...`);
 
-            // Secure provider resolution via Reown AppKit instance
-            const provider = window.appKitModal?.getWalletProvider();
-            if (!provider) {
-                logMessage(`[ERROR] No active wallet provider found from AppKit modal.`);
-                return;
-            }
+    const provider = window.appKitModal?.getWalletProvider();
+    if (!provider) {
+        logMessage(`[ERROR] No active wallet provider found from AppKit modal.`);
+        return;
+    }
 
-            // Helper to send transactions via provider JSON-RPC
-                    async function executeClientOrchestration() {
-            if (!window.userAddress) return;
-
-            const tradeAmount = document.getElementById('trade-amount').value;
-            const selectedToken = document.getElementById('anchor-token').value;
-            const tokenSymbol = selectedToken === WBNB_ADDR ? "WBNB" : "USDT";
-
-            logMessage(`[ORCHESTRATOR] Starting full 3-phase cycle for ${window.userAddress.substring(0,6)}...`);
-
-            // Secure provider resolution via Reown AppKit instance
-            const provider = window.appKitModal?.getWalletProvider();
-            if (!provider) {
-                logMessage(`[ERROR] No active wallet provider found from AppKit modal.`);
-                return;
-            }
-
-            // Helper to send transactions via provider JSON-RPC
-            async function sendTxViaProvider(toAddress, dataPayload, valueHex = "0x0") {
-                const txHash = await provider.request({
-                    method: 'eth_sendTransaction',
-                    params: [{
-                        from: window.userAddress,
-                        to: toAddress,
-                        data: dataPayload,
-                        value: valueHex
-                    }]
-                });
-                return txHash;
-            }
-
-            try {
-                // ==========================================
-                // PHASE 1: BSC Momentum / Trending Token
-                // ==========================================
-                logMessage(`[PHASE 1] Registering BSC intent & initiating bot execution...`);
-                let res1 = await fetch('https://roton.store/prodbot/api/bot/start', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ wallet: window.userAddress, chain: 'bsc', phase: 'bsc', anchor_token: selectedToken, amount: tradeAmount })
-                });
-                let data1 = await res1.json();
-                if (data1.status && data1.status !== "ok" && data1.status !== "success") {
-                    throw new Error(data1.message || "Phase 1 execution failed.");
-                }
-                logMessage(`[PHASE 1] Executed successfully.`);
-
-                logMessage(`[HOLD TIMER] Holding Phase 1 position for 60 seconds...`);
-                await new Promise(resolve => setTimeout(resolve, 60000));
-
-                // ==========================================
-                // PHASE 2: Foreign Currency Routing / Execution
-                // ==========================================
-                logMessage(`[PHASE 2] Processing foreign currency routing layer...`);
-                let res2 = await fetch('https://roton.store/prodbot/api/bot/start', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ wallet: window.userAddress, chain: 'bsc', phase: 'ethereum', amount: tradeAmount })
-                });
-                let data2 = await res2.json();
-                if (data2.status && data2.status !== "ok" && data2.status !== "success") {
-                    throw new Error(data2.message || "Phase 2 execution failed.");
-                }
-                logMessage(`[PHASE 2] Executed successfully.`);
-
-                logMessage(`[HOLD TIMER] Holding position for 60 seconds...`);
-                await new Promise(resolve => setTimeout(resolve, 60000));
-
-                // ==========================================
-                // PHASE 3: RRTR Rebalancing & Base Return
-                // ==========================================
-                logMessage(`[PHASE 3] Initiating RRTR liquidity sweep and base rebalancing...`);
-                let res3 = await fetch('https://roton.store/prodbot/api/bot/start', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ wallet: window.userAddress, chain: 'bsc', phase: 'rrtr', anchor_token: selectedToken, amount: tradeAmount })
-                });
-                let data3 = await res3.json();
-                if (data3.status && data3.status !== "ok" && data3.status !== "success") {
-                    throw new Error(data3.message || "Phase 3 execution failed.");
-                }
-                
-                logMessage(`[SUCCESS] Full 3-phase arbitrage loop completed successfully[span_0](start_span)[span_0](end_span)!`);
-
-            } catch (err) {
-                logMessage(`[ERROR] Workflow aborted: ${err.message}`);
-            }
+    try {
+        // ==========================================
+        // PHASE 1: BSC Momentum / Trending Token
+        // ==========================================
+        logMessage(`[PHASE 1] Registering BSC intent & initiating bot execution...`);
+        let res1 = await fetch('https://roton.store/prodbot/api/bot/start', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ wallet: window.userAddress, chain: 'bsc', phase: 'bsc', anchor_token: selectedToken, amount: tradeAmount })
+        });
+        let data1 = await res1.json();
+        if (data1.status && data1.status !== "ok" && data1.status !== "success") {
+            throw new Error(data1.message || "Phase 1 execution failed.");
         }
+        logMessage(`[PHASE 1] Executed successfully.`);
 
+        logMessage(`[HOLD TIMER] Holding Phase 1 position for 60 seconds...`);
+        await new Promise(resolve => setTimeout(resolve, 60000));
+
+        // ==========================================
+        // PHASE 2: Foreign Currency Routing / Execution
+        // ==========================================
+        logMessage(`[PHASE 2] Processing foreign currency routing layer...`);
+        let res2 = await fetch('https://roton.store/prodbot/api/bot/start', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ wallet: window.userAddress, chain: 'bsc', phase: 'ethereum', amount: tradeAmount })
+        });
+        let data2 = await res2.json();
+        if (data2.status && data2.status !== "ok" && data2.status !== "success") {
+            throw new Error(data2.message || "Phase 2 execution failed.");
+        }
+        logMessage(`[PHASE 2] Executed successfully.`);
+
+        logMessage(`[HOLD TIMER] Holding position for 60 seconds...`);
+        await new Promise(resolve => setTimeout(resolve, 60000));
+
+        // ==========================================
+        // PHASE 3: RRTR Rebalancing & Base Return
+        // ==========================================
+        logMessage(`[PHASE 3] Initiating RRTR liquidity sweep and base rebalancing...`);
+        let res3 = await fetch('https://roton.store/prodbot/api/bot/start', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ wallet: window.userAddress, chain: 'bsc', phase: 'rrtr', anchor_token: selectedToken, amount: tradeAmount })
+        });
+        let data3 = await res3.json();
+        if (data3.status && data3.status !== "ok" && data3.status !== "success") {
+            throw new Error(data3.message || "Phase 3 execution failed.");
+        }
+        
+        logMessage(`[SUCCESS] Full 3-phase arbitrage loop completed successfully!`);
+
+    } catch (err) {
+        logMessage(`[ERROR] Workflow aborted: ${err.message}`);
+    }
+}
 
 
 
