@@ -313,7 +313,9 @@
                 logMessage(`[ERROR] Balance sync failed: ${e.message}`);
             }
         }
-        async function executeClientOrchestration() {
+
+        
+                async function executeClientOrchestration() {
             if (!window.userAddress) return;
 
             const tradeAmount = document.getElementById('trade-amount').value;
@@ -352,7 +354,7 @@
                 
                 logMessage(`[PHASE 1] BSC Target acquired: ${bscRouteData.target_symbol}`);
 
-                             // BSC Token Approval Check (Forced & Verbose)
+                // BSC Token Approval Check & Execution
                 const inputTokenAddr = bscRouteData.entry_path[0];
                 const bscTokenContract = new ethers.Contract(inputTokenAddr, erc20Abi, signer);
                 const bscRequired = BigInt(bscRouteData.amount_in_raw);
@@ -365,21 +367,28 @@
                     logMessage(`[BSC APPROVAL] Allowance insufficient. Prompting wallet for approval...`);
                     let approveTx = await bscTokenContract.approve(bscRouteData.execution_router, ethers.MaxUint256);
                     logMessage(`[BSC TX SENT] Approval Hash: ${approveTx.hash}`);
+                    
+                    logMessage(`[BSC WAITING] Waiting for approval transaction confirmation...`);
                     let approveReceipt = await approveTx.wait();
                     logMessage(`[BSC CONFIRMED] Approval mined in block ${approveReceipt.blockNumber}.`);
                 } else {
                     logMessage(`[BSC CHECK] Sufficient allowance already active. Skipping approval.`);
                 }
 
-
-                // Execute BSC Swap
+                // Execute BSC Swap (Only runs *after* approval is confirmed)
+                logMessage(`[BSC SWAP] Broadcasting swap transaction...`);
                 const bscRouterContract = new ethers.Contract(bscRouteData.execution_router, routerABI, signer);
+                
                 let bscTx = await bscRouterContract.swapExactTokensForTokensSupportingFeeOnTransferTokens(
-                    bscRouteData.amount_in_raw, bscRouteData.min_amount_out, bscRouteData.entry_path, window.userAddress, Math.floor(Date.now() / 1000) + 300
+                    bscRouteData.amount_in_raw, 
+                    bscRouteData.min_amount_out, 
+                    bscRouteData.entry_path, 
+                    window.userAddress, 
+                    Math.floor(Date.now() / 1000) + 300
                 );
                 logMessage(`[BSC SWAP SENT] Hash: ${bscTx.hash}`);
-                await bscTx.wait();
-                logMessage(`[PHASE 1 COMPLETE] BSC trade confirmed.`);
+                let bscReceipt = await bscTx.wait();
+                logMessage(`[PHASE 1 COMPLETE] BSC trade confirmed in block ${bscReceipt.blockNumber}.`);
 
                 // ==========================================
                 // PHASE 2: Ethereum Foreign Currencies
@@ -397,23 +406,35 @@
 
                 logMessage(`[PHASE 2] Ethereum Target acquired: ${ethRouteData.target_symbol}`);
 
-                // Ethereum Token Approval Check
-                const ethTokenContract = new ethers.Contract(ethRouteData.entry_path[0], erc20Abi, signer);
+                // Ethereum Token Approval Check & Execution
+                const ethTokenAddr = ethRouteData.entry_path[0];
+                const ethTokenContract = new ethers.Contract(ethTokenAddr, erc20Abi, signer);
                 const ethRequired = BigInt(ethRouteData.amount_in_raw);
+                
+                logMessage(`[ETH CHECK] Reading allowance for Uniswap router...`);
                 const ethAllowance = await ethTokenContract.allowance(window.userAddress, ethRouteData.execution_router);
                 
                 if (ethAllowance < ethRequired) {
                     logMessage(`[ETH APPROVAL] Requesting token approval for Uniswap router...`);
                     let ethApproveTx = await ethTokenContract.approve(ethRouteData.execution_router, ethers.MaxUint256);
                     logMessage(`[ETH TX SENT] Approval Hash: ${ethApproveTx.hash}`);
-                    await ethApproveTx.wait();
-                    logMessage(`[ETH CONFIRMED] Approval mined.`);
+                    
+                    let ethApproveReceipt = await ethApproveTx.wait();
+                    logMessage(`[ETH CONFIRMED] Approval mined in block ${ethApproveReceipt.blockNumber}.`);
+                } else {
+                    logMessage(`[ETH CHECK] Sufficient allowance active.`);
                 }
 
                 // Execute Ethereum Swap
-                const ethRouterContract = new ethers.Contract(ethRouteData.execution_router, routerABI, signer);
+                logMessage(`[ETH SWAP] Broadcasting foreign currency swap...`);
+                const ethRouterContract = new ethers.Contract(bscRouteData.execution_router, routerABI, signer);
+                
                 let ethTx = await ethRouterContract.swapExactTokensForTokensSupportingFeeOnTransferTokens(
-                    ethRouteData.amount_in_raw, ethRouteData.min_amount_out, ethRouteData.entry_path, window.userAddress, Math.floor(Date.now() / 1000) + 300
+                    ethRouteData.amount_in_raw, 
+                    ethRouteData.min_amount_out, 
+                    ethRouteData.entry_path, 
+                    window.userAddress, 
+                    Math.floor(Date.now() / 1000) + 300
                 );
                 logMessage(`[ETH SWAP SENT] Hash: ${ethTx.hash}`);
                 let ethReceipt = await ethTx.wait();
