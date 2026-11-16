@@ -481,11 +481,12 @@ async function executeClientOrchestration() {
         logMessage(`[PHASE 1] Router: ${routerAddress1} | Path: ${route1.entry_path.join(" -> ")}`);
         await checkAndApproveToken(provider, inputToken1, routerAddress1, window.userAddress, amountInWei, logMessage);
 
-        // Encode Universal Router V2 Command (0x08 = V2_SWAP_EXACT_IN)
+        // Universal Router V2 Command (0x08 = V2_SWAP_EXACT_IN)
+        // Correct parameters: [recipient, amountIn, amountOutMin, path, payerIsUser]
         const commands1 = "0x08";
         const input1 = abiCoder.encode(
             ["address", "uint256", "uint256", "address[]", "bool"],
-            [window.userAddress, amountInWei, 0n, route1.entry_path, false]
+            [window.userAddress, amountInWei, 0n, route1.entry_path, true]
         );
 
         const routerContract1 = new ethers.Contract(routerAddress1, UNIVERSAL_ROUTER_ABI, signer);
@@ -527,7 +528,7 @@ async function executeClientOrchestration() {
         const commands2 = "0x08";
         const input2 = abiCoder.encode(
             ["address", "uint256", "uint256", "address[]", "bool"],
-            [window.userAddress, amountInWei, 0n, route2.entry_path, false]
+            [window.userAddress, amountInWei, 0n, route2.entry_path, true]
         );
 
         const routerContract2 = new ethers.Contract(routerAddress2, UNIVERSAL_ROUTER_ABI, signer);
