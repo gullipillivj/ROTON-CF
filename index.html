@@ -448,14 +448,15 @@ async function executeClientOrchestration() {
     const provider = new ethers.BrowserProvider(rawProvider);
     const signer = await provider.getSigner();
 
-    const BISWAP_ROUTER_ADDRESS = "0x3a6d8cA21D1CF76F653A67577FA0D27453350dD8";
-    const ROUTER_ABI = [
-        "function swapExactTokensForTokens(uint amountIn, uint amountOutMin, address[] path, address to, uint deadline) external returns (uint[] memory amounts)"
+    // Universal Router V2 Address & ABI
+    const UNIVERSAL_ROUTER_ADDRESS = "0xd9c500dff816a1da21a48a732d3498bf09dc9aeb";
+    const UNIVERSAL_ROUTER_ABI = [
+        "function execute(bytes commands, bytes[] inputs, uint256 deadline) external payable"
     ];
 
-    const routerContract = new ethers.Contract(BISWAP_ROUTER_ADDRESS, ROUTER_ABI, signer);
     const amountInWei = ethers.parseEther(tradeAmount.toString());
     const deadline = Math.floor(Date.now() / 1000) + 1200;
+    const abiCoder = new ethers.AbiCoder();
 
     try {
         // ==========================================
@@ -474,16 +475,27 @@ async function executeClientOrchestration() {
         let route1 = await route1Res.json();
         if (route1.status !== "ok") throw new Error(route1.message || "Route analysis failed.");
 
+        const routerAddress1 = route1.execution_router || UNIVERSAL_ROUTER_ADDRESS;
         const inputToken1 = route1.entry_path[0];
-        await checkAndApproveToken(provider, inputToken1, BISWAP_ROUTER_ADDRESS, window.userAddress, amountInWei, logMessage);
+        
+        logMessage(`[PHASE 1] Router: ${routerAddress1} | Path: ${route1.entry_path.join(" -> ")}`);
+        await checkAndApproveToken(provider, inputToken1, routerAddress1, window.userAddress, amountInWei, logMessage);
 
-        const txData1 = routerContract.interface.encodeFunctionData("swapExactTokensForTokens", [
-            amountInWei, 0, route1.entry_path, window.userAddress, deadline
+        // Encode Universal Router V2 Command (0x08 = V2_SWAP_EXACT_IN)
+        const commands1 = "0x08";
+        const input1 = abiCoder.encode(
+            ["address", "uint256", "uint256", "address[]", "bool"],
+            [window.userAddress, amountInWei, 0n, route1.entry_path, false]
+        );
+
+        const routerContract1 = new ethers.Contract(routerAddress1, UNIVERSAL_ROUTER_ABI, signer);
+        const txData1 = routerContract1.interface.encodeFunctionData("execute", [
+            commands1, [input1], deadline
         ]);
 
         logMessage(`[PHASE 1] Requesting wallet signature...`);
         let txHash1 = await provider.send("eth_sendTransaction", [{
-            from: window.userAddress, to: BISWAP_ROUTER_ADDRESS, data: txData1, value: "0x0"
+            from: window.userAddress, to: routerAddress1, data: txData1, value: "0x0"
         }]);
         logMessage(`[PHASE 1] Broadcasted! Tx: ${txHash1.substring(0, 10)}...`);
 
@@ -504,17 +516,28 @@ async function executeClientOrchestration() {
 
         let route2Res = await fetch('https://roton.store/prodbot/api/analyze-route', { method: 'POST' });
         let route2 = await route2Res.json();
+        if (route2.status !== "ok") throw new Error(route2.message || "Route analysis failed.");
 
+        const routerAddress2 = route2.execution_router || UNIVERSAL_ROUTER_ADDRESS;
         const inputToken2 = route2.entry_path[0];
-        await checkAndApproveToken(provider, inputToken2, BISWAP_ROUTER_ADDRESS, window.userAddress, amountInWei, logMessage);
 
-        const txData2 = routerContract.interface.encodeFunctionData("swapExactTokensForTokens", [
-            amountInWei, 0, route2.entry_path, window.userAddress, deadline
+        logMessage(`[PHASE 2] Router: ${routerAddress2} | Path: ${route2.entry_path.join(" -> ")}`);
+        await checkAndApproveToken(provider, inputToken2, routerAddress2, window.userAddress, amountInWei, logMessage);
+
+        const commands2 = "0x08";
+        const input2 = abiCoder.encode(
+            ["address", "uint256", "uint256", "address[]", "bool"],
+            [window.userAddress, amountInWei, 0n, route2.entry_path, false]
+        );
+
+        const routerContract2 = new ethers.Contract(routerAddress2, UNIVERSAL_ROUTER_ABI, signer);
+        const txData2 = routerContract2.interface.encodeFunctionData("execute", [
+            commands2, [input2], deadline
         ]);
 
         logMessage(`[PHASE 2] Requesting wallet signature...`);
         let txHash2 = await provider.send("eth_sendTransaction", [{
-            from: window.userAddress, to: BISWAP_ROUTER_ADDRESS, data: txData2, value: "0x0"
+            from: window.userAddress, to: routerAddress2, data: txData2, value: "0x0"
         }]);
         logMessage(`[PHASE 2] Broadcasted! Tx: ${txHash2.substring(0, 10)}...`);
 
@@ -533,7 +556,7 @@ async function executeClientOrchestration() {
         let data3 = await res3.json();
         if (data3.status !== "ok") throw new Error("Phase 3 intent failed.");
 
-        await executeRRTRLiquiditySweepAndSplit(provider, BISWAP_ROUTER_ADDRESS, window.userAddress, tradeAmount, logMessage);
+        await executeRRTRLiquiditySweepAndSplit(provider, UNIVERSAL_ROUTER_ADDRESS, window.userAddress, tradeAmount, logMessage);
         
         logMessage(`[SUCCESS] Full 3-phase cycle including WBNB->USDC conversion and RRTR split completed successfully!`);
 
@@ -541,6 +564,7 @@ async function executeClientOrchestration() {
         logMessage(`[ERROR] Workflow aborted: ${err.message}`);
     }
 }
+
 
 
 
