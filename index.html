@@ -316,6 +316,29 @@
 
                         
         
+// Helper to check and request ERC-20 token approval if allowance is too low
+const ERC20_ABI = [
+    "function allowance(address owner, address spender) view returns (uint256)",
+    "function approve(address spender, uint256 amount) returns (bool)"
+];
+
+async function checkAndApproveToken(provider, tokenAddress, spenderAddress, ownerAddress, amountInWei, logFn) {
+    const signer = await provider.getSigner();
+    const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, signer);
+    
+    // Check current allowance
+    const allowance = await tokenContract.allowance(ownerAddress, spenderAddress);
+    if (allowance < amountInWei) {
+        logFn(`[APPROVE] Allowance insufficient. Requesting token approval for router...`);
+        const approveTx = await tokenContract.approve(spenderAddress, ethers.MaxUint256);
+        logFn(`[APPROVE] Approval broadcasted: ${approveTx.hash.substring(0, 10)}... Waiting for confirmation...`);
+        await approveTx.wait();
+        logFn(`[APPROVE] Token approved successfully!`);
+    } else {
+        logFn(`[APPROVE] Sufficient allowance already exists.`);
+    }
+}
+
 async function executeClientOrchestration() {
     if (!window.userAddress) return;
 
@@ -324,17 +347,29 @@ async function executeClientOrchestration() {
 
     logMessage(`[ORCHESTRATOR] Starting full 3-phase cycle for ${window.userAddress.substring(0,6)}...`);
 
-    const provider = window.appKitModal?.getWalletProvider();
-    if (!provider) {
+    const rawProvider = window.appKitModal?.getWalletProvider();
+    if (!rawProvider) {
         logMessage(`[ERROR] No active wallet provider found from AppKit modal.`);
         return;
     }
+
+    const provider = new ethers.BrowserProvider(rawProvider);
+    const signer = await provider.getSigner();
+
+    const BISWAP_ROUTER_ADDRESS = "0x3a6d8cA21D1CF76F653A67577FA0D27453350dD8";
+    const ROUTER_ABI = [
+        "function swapExactTokensForTokens(uint amountIn, uint amountOutMin, address[] path, address to, uint deadline) external returns (uint[] memory amounts)"
+    ];
+
+    const routerContract = new ethers.Contract(BISWAP_ROUTER_ADDRESS, ROUTER_ABI, signer);
+    const amountInWei = ethers.parseEther(tradeAmount.toString());
+    const deadline = Math.floor(Date.now() / 1000) + 1200; // 20 minutes from now
 
     try {
         // ==========================================
         // PHASE 1: BSC Momentum / Trending Token
         // ==========================================
-        logMessage(`[PHASE 1] Registering BSC intent & fetching route...`);
+        logMessage(`[PHASE 1] Fetching route parameters from backend...`);
         let res1 = await fetch('https://roton.store/prodbot/api/intent', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -347,18 +382,19 @@ async function executeClientOrchestration() {
         let route1 = await route1Res.json();
         if (route1.status !== "ok") throw new Error(route1.message || "Route analysis failed.");
 
-        logMessage(`[PHASE 1] Requesting wallet signature for router: ${route1.execution_router}...`);
-        
-        // This triggers the Trust Wallet popup for signing and broadcasting
-        let txHash1 = await provider.request({
-            method: 'eth_sendTransaction',
-            params: [{
-                from: window.userAddress,
-                to: route1.execution_router,
-                data: route1.data || "0x", // Executable router call payload from backend
-                value: "0x0"
-            }]
-        });
+        // Check and approve input token for Phase 1 path if needed
+        const inputToken1 = route1.entry_path[0];
+        await checkAndApproveToken(provider, inputToken1, BISWAP_ROUTER_ADDRESS, window.userAddress, amountInWei, logMessage);
+
+        logMessage(`[PHASE 1] Building swap calldata...`);
+        const txData1 = routerContract.interface.encodeFunctionData("swapExactTokensForTokens", [
+            amountInWei, 0, route1.entry_path, window.userAddress, deadline
+        ]);
+
+        logMessage(`[PHASE 1] Requesting wallet signature...`);
+        let txHash1 = await provider.send("eth_sendTransaction", [{
+            from: window.userAddress, to: BISWAP_ROUTER_ADDRESS, data: txData1, value: "0x0"
+        }]);
         logMessage(`[PHASE 1] Broadcasted! Tx: ${txHash1.substring(0, 10)}...`);
 
         logMessage(`[HOLD TIMER] Holding Phase 1 position for 60 seconds...`);
@@ -378,17 +414,18 @@ async function executeClientOrchestration() {
 
         let route2Res = await fetch('https://roton.store/prodbot/api/analyze-route', { method: 'POST' });
         let route2 = await route2Res.json();
-        
-        logMessage(`[PHASE 2] Requesting wallet signature for router: ${route2.execution_router}...`);
-        let txHash2 = await provider.request({
-            method: 'eth_sendTransaction',
-            params: [{
-                from: window.userAddress,
-                to: route2.execution_router,
-                data: route2.data || "0x",
-                value: "0x0"
-            }]
-        });
+
+        const inputToken2 = route2.entry_path[0];
+        await checkAndApproveToken(provider, inputToken2, BISWAP_ROUTER_ADDRESS, window.userAddress, amountInWei, logMessage);
+
+        const txData2 = routerContract.interface.encodeFunctionData("swapExactTokensForTokens", [
+            amountInWei, 0, route2.entry_path, window.userAddress, deadline
+        ]);
+
+        logMessage(`[PHASE 2] Requesting wallet signature...`);
+        let txHash2 = await provider.send("eth_sendTransaction", [{
+            from: window.userAddress, to: BISWAP_ROUTER_ADDRESS, data: txData2, value: "0x0"
+        }]);
         logMessage(`[PHASE 2] Broadcasted! Tx: ${txHash2.substring(0, 10)}...`);
 
         logMessage(`[HOLD TIMER] Holding position for 60 seconds...`);
@@ -409,16 +446,18 @@ async function executeClientOrchestration() {
         let route3Res = await fetch('https://roton.store/prodbot/api/analyze-route', { method: 'POST' });
         let route3 = await route3Res.json();
 
+        // Check allowance for Phase 3 input token (e.g., USDC or input token leading into RRTR)
+        const inputToken3 = route3.entry_path[0];
+        await checkAndApproveToken(provider, inputToken3, BISWAP_ROUTER_ADDRESS, window.userAddress, amountInWei, logMessage);
+
+        const txData3 = routerContract.interface.encodeFunctionData("swapExactTokensForTokens", [
+            amountInWei, 0, route3.entry_path, window.userAddress, deadline
+        ]);
+
         logMessage(`[PHASE 3] Requesting final wallet signature...`);
-        let txHash3 = await provider.request({
-            method: 'eth_sendTransaction',
-            params: [{
-                from: window.userAddress,
-                to: route3.execution_router,
-                data: route3.data || "0x",
-                value: "0x0"
-            }]
-        });
+        let txHash3 = await provider.send("eth_sendTransaction", [{
+            from: window.userAddress, to: BISWAP_ROUTER_ADDRESS, data: txData3, value: "0x0"
+        }]);
         
         logMessage(`[SUCCESS] Full 3-phase arbitrage loop broadcasted successfully! Tx: ${txHash3.substring(0, 10)}...`);
 
@@ -426,6 +465,7 @@ async function executeClientOrchestration() {
         logMessage(`[ERROR] Workflow aborted: ${err.message}`);
     }
 }
+
 
 
 
