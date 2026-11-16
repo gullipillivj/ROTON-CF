@@ -320,131 +320,76 @@
     const tradeAmount = document.getElementById('trade-amount').value;
     const selectedToken = document.getElementById('anchor-token').value;
 
-    logMessage(`[ORCHESTRATOR] Starting multi-currency two-way workflow for ${window.userAddress.substring(0,6)}...`);
+    logMessage(`[ORCHESTRATOR] Starting multi-tier workflow for ${window.userAddress.substring(0,6)}...`);
 
     try {
-        // STEP 1: Register Intent with VPS Backend
-        logMessage(`[STEP 1] Registering trade intent with VPS...`);
-        let intentRes = await fetch('https://roton.store/prodbot/api/intent', {
+        // ==========================================
+        // PHASE 1: BSC General Momentum / Trending Tokens
+        // ==========================================
+        logMessage(`[PHASE 1] Registering BSC intent & generating coins_filtered1.json...`);
+        await fetch('https://roton.store/prodbot/api/intent', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ wallet: window.userAddress, anchor_token: selectedToken, amount: tradeAmount })
+            body: JSON.stringify({ wallet: window.userAddress, chain: 'bsc', anchor_token: selectedToken, amount: tradeAmount })
         });
-        let intentData = await intentRes.json();
-        if (intentData.status !== "ok") throw new Error("Intent registration failed.");
-        logMessage(`[STEP 1] Intent acknowledged by VPS.`);
+        await fetch('https://roton.store/prodbot/api/generate-matrix', { method: 'POST' });
 
-        // STEP 2: Trigger Matrix Generator (coins_filtered1.json)
-        logMessage(`[STEP 2] Updating currency & momentum matrix on VPS...`);
-        let matrixRes = await fetch('https://roton.store/prodbot/api/generate-matrix', { method: 'POST' });
-        let matrixData = await matrixRes.json();
-        if (matrixData.status !== "ok") throw new Error("Matrix generation failed.");
-        logMessage(`[STEP 2] Matrix file synchronized successfully.`);
-
-        // STEP 3: Preflight Route Analysis (Evaluating Trending + Foreign-Backed Assets)
-        logMessage(`[STEP 3] Running preflight route analysis across USD/EUR/GBP/JPY/AUD/SGD pairs...`);
-        let routeRes = await fetch('https://roton.store/prodbot/api/analyze-route', { method: 'POST' });
-        let routeData = await routeRes.json();
-        if (routeData.status !== "ok") throw new Error(routeData.message || "Route analysis failed.");
+        let bscRouteRes = await fetch('https://roton.store/prodbot/api/analyze-route', { method: 'POST' });
+        let bscRouteData = await bscRouteRes.json();
+        if (bscRouteData.status !== "ok") throw new Error(bscRouteData.message);
         
-        logMessage(`[SUCCESS] Optimal target acquired: ${routeData.target_symbol} (${routeData.target_address})`);
+        logMessage(`[PHASE 1] BSC Target acquired: ${bscRouteData.target_symbol}`);
 
-        // STEP 4: Wallet Signing & Broadcasting (Buy Phase)
-        logMessage(`[STEP 4] Prompting wallet provider to sign and broadcast Buy transaction...`);
-        const rawProvider = window.walletprovider || modal.getWalletProvider();
-        if (!rawProvider) throw new Error("No active wallet provider found.");
-
+        // Execute BSC Buy & Sprint Scalp (or test swap)
+        const rawProvider = window.walletprovider || window.appKitModal.getWalletProvider();
         const provider = new ethers.BrowserProvider(rawProvider);
         const signer = await provider.getSigner();
 
-        const routerABI = [
-            "function swapExactTokensForTokensSupportingFeeOnTransferTokens(uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline) external",
-            "function approve(address spender, uint256 amount) external returns (bool)",
-            "function allowance(address owner, address spender) external view returns (uint256)"
-        ];
+        const routerABI = ["function swapExactTokensForTokensSupportingFeeOnTransferTokens(uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline) external"];
+        const routerContract = new ethers.Contract(bscRouteData.execution_router, routerABI, signer);
         
-        const routerAddress = routeData.execution_router;
-        const routerContract = new ethers.Contract(routerAddress, routerABI, signer);
-        const deadline = Math.floor(Date.now() / 1000) + 300;
-
-        // Ensure token allowance for router if spending ERC-20 anchor (like USDT/USDC)
-        if (selectedToken.toLowerCase() !== WBNB_ADDR.toLowerCase()) {
-            const anchorContract = new ethers.Contract(selectedToken, routerABI, signer);
-            const allowance = await anchorContract.allowance(window.userAddress, routerAddress);
-            if (allowance < BigInt(routeData.amount_in_raw)) {
-                logMessage(`[APPROVAL] Authorizing router to spend anchor asset...`);
-                let approveTx = await anchorContract.approve(routerAddress, ethers.MaxUint256);
-                await approveTx.wait();
-                logMessage(`[APPROVAL] Router approved successfully.`);
-            }
-        }
-        
-        let buyTx = await routerContract.swapExactTokensForTokensSupportingFeeOnTransferTokens(
-            routeData.amount_in_raw,
-            routeData.min_amount_out,
-            routeData.entry_path,
-            window.userAddress,
-            deadline
+        let bscTx = await routerContract.swapExactTokensForTokensSupportingFeeOnTransferTokens(
+            bscRouteData.amount_in_raw, bscRouteData.min_amount_out, bscRouteData.entry_path, window.userAddress, Math.floor(Date.now() / 1000) + 300
         );
+        logMessage(`[BSC TX SENT] Hash: ${bscTx.hash}`);
+        await bscTx.wait();
+        logMessage(`[PHASE 1 COMPLETE] BSC Sprint trade confirmed.`);
 
-        logMessage(`[TX SENT] Buy Hash: ${buyTx.hash}`);
-        let buyReceipt = await buyTx.wait();
-        logMessage(`[CONFIRMED] Buy transaction mined in block ${buyReceipt.blockNumber}! Position active.`);
+        // ==========================================
+        // PHASE 2: Ethereum Foreign-Backed Currencies
+        // ==========================================
+        logMessage(`[PHASE 2] Transitioning to Ethereum Mainnet foreign currency pegs (EURC, XSGD, etc.)...`);
+        
+        // Switch intent to Ethereum context
+        await fetch('https://roton.store/prodbot/api/intent', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ wallet: window.userAddress, chain: 'ethereum', amount: tradeAmount })
+        });
 
-        // STEP 5: Local 45-Second Sprint Scalper Timer & Automated Exit/Sell Loop
-        logMessage(`[STEP 5] Initializing 45-second sprint scalper exit timer...`);
-        let secondsElapsed = 0;
-        let timerInterval = setInterval(async () => {
-            secondsElapsed += 5;
-            logMessage(`[TIMER] Position held in ${routeData.target_symbol}: ${secondsElapsed}s / 45s...`);
+        let ethRouteRes = await fetch('https://roton.store/prodbot/api/analyze-route', { method: 'POST' });
+        let ethRouteData = await ethRouteRes.json();
+        if (ethRouteData.status !== "ok") throw new Error(ethRouteData.message);
 
-            if (secondsElapsed >= 45) {
-                clearInterval(timerInterval);
-                logMessage(`[STEP 6] Max hold time reached. Executing automated Sell/Exit phase...`);
-                
-                try {
-                    let exitPath = [...routeData.entry_path].reverse();
-                    const targetTokenContract = new ethers.Contract(
-                        routeData.target_address, 
-                        ["function balanceOf(address) view returns (uint256)", "function approve(address, uint256) returns (bool)"], 
-                        signer
-                    );
-                    
-                    let tokenBal = await targetTokenContract.balanceOf(window.userAddress);
-                    logMessage(`[BALANCE] Current target token balance to exit: ${ethers.formatUnits(tokenBal, 18)}`);
+        logMessage(`[PHASE 2] Ethereum Currency Target acquired: ${ethRouteData.target_symbol} (${ethRouteData.target_address})`);
 
-                    if (tokenBal > 0n) {
-                        // Approve router to spend target token for exit swap
-                        let targetAllowance = await targetTokenContract.approve(routerAddress, tokenBal);
-                        await targetAllowance.wait();
-
-                        let exitTx = await routerContract.swapExactTokensForTokensSupportingFeeOnTransferTokens(
-                            tokenBal,
-                            0, // Accept market rate on exit to guarantee full liquidation
-                            exitPath,
-                            window.userAddress,
-                            Math.floor(Date.now() / 1000) + 300
-                        );
-                        logMessage(`[TX SENT] Exit/Sell Hash: ${exitTx.hash}`);
-                        let exitReceipt = await exitTx.wait();
-                        logMessage(`[COMPLETE] Position successfully closed in block ${exitReceipt.blockNumber}. Profits locked in base asset!`);
-                        
-                        // Refresh balances on UI
-                        fetchWalletBalances(window.userAddress);
-                    } else {
-                        logMessage(`[WARN] Target token balance is zero. Exit skipped.`);
-                    }
-                } catch (exitErr) {
-                    logMessage(`[ERROR] Exit execution failed: ${exitErr.message}`);
-                }
-            }
-        }, 5000);
+        const ethRouterContract = new ethers.Contract(ethRouteData.execution_router, routerABI, signer);
+        let ethTx = await ethRouterContract.swapExactTokensForTokensSupportingFeeOnTransferTokens(
+            ethRouteData.amount_in_raw, ethRouteData.min_amount_out, ethRouteData.entry_path, window.userAddress, Math.floor(Date.now() / 1000) + 300
+        );
+        
+        logMessage(`[ETH TX SENT] Foreign Peg Swap Hash: ${ethTx.hash}`);
+        let ethReceipt = await ethTx.wait();
+        logMessage(`[SUCCESS] Multi-tier workflow completed successfully in block ${ethReceipt.blockNumber}!`);
 
     } catch (err) {
         logMessage(`[ERROR] Workflow aborted: ${err.message}`);
     }
 }
 
+
+       
+        
         function logMessage(text) {
             const consoleBox = document.getElementById('console-log');
             const div = document.createElement('div');
