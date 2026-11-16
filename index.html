@@ -318,6 +318,7 @@
         
 // Helper to check and request ERC-20 token approval if allowance is too low
 // Helper to check and request ERC-20 token approval if allowance is too low
+// Helper to check and request ERC-20 token approval if allowance is too low
 const ERC20_ABI = [
     "function allowance(address owner, address spender) view returns (uint256)",
     "function approve(address spender, uint256 amount) returns (bool)"
@@ -339,33 +340,46 @@ async function checkAndApproveToken(provider, tokenAddress, spenderAddress, owne
     }
 }
 
-// Dedicated function handling the 0.006 liquidity split, holding, and sell-back for RRTR
+// Dedicated function handling WBNB -> USDC, foreign tokens, and the 0.006 RRTR liquidity split/hold/sell
 async function executeRRTRLiquiditySweepAndSplit(provider, routerAddress, userAddress, tradeAmountUSDC, logFn) {
     const signer = await provider.getSigner();
     
+    const WBNB_ADDRESS = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c";
     const USDC_ADDRESS = "0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d"; 
     const RRTR_TOKEN_ADDRESS = "0xE7c921e2f78a9BCA5e959acf4517501F426BfE30";[span_0](start_span)[span_0](end_span)
-    const WBNB_ADDRESS = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c";
 
     const maxAvailableLiquidity = 0.006; // Respecting prevailing pool depth
-    const inputUSDC = parseFloat(tradeAmountUSDC);
-
-    let rrtrSwapAmount = Math.min(inputUSDC, maxAvailableLiquidity);
-    let remainingUSDC = inputUSDC - rrtrSwapAmount;
-
-    logFn(`[RRTR] Allocating ${rrtrSwapAmount} USDC to RRTR pool (respecting liquidity), and routing remaining ${remainingUSDC} USDC to WBNB.`);
+    const inputAmount = parseFloat(tradeAmountUSDC);
 
     const ROUTER_ABI = [
         "function swapExactTokensForTokens(uint amountIn, uint amountOutMin, address[] path, address to, uint deadline) external returns (uint[] memory amounts)"
     ];
     const routerContract = new ethers.Contract(routerAddress, ROUTER_ABI, signer);
     const deadline = Math.floor(Date.now() / 1000) + 1200;
+    const amountInWei = ethers.parseUnits(inputAmount.toString(), 18);
 
-    // Ensure USDC approval for router before splitting
-    const amountInWei = ethers.parseUnits(inputUSDC.toString(), 18);
+    // 1. Convert Base WBNB into USDC first so we have the required stablecoin base for foreign/RRTR paths
+    logFn(`[ROUTER] Converting WBNB to USDC as required for foreign currency & RRTR layers...`);
+    const pathWBNBtoUSDC = [WBNB_ADDRESS, USDC_ADDRESS];
+    await checkAndApproveToken(provider, WBNB_ADDRESS, routerAddress, userAddress, amountInWei, logFn);
+
+    const txDataUSDC = routerContract.interface.encodeFunctionData("swapExactTokensForTokens", [
+        amountInWei, 0, pathWBNBtoUSDC, userAddress, deadline
+    ]);
+    let txHashUSDC = await provider.send("eth_sendTransaction", [{
+        from: userAddress, to: routerAddress, data: txDataUSDC, value: "0x0"
+    }]);
+    logFn(`[ROUTER] Successfully swapped WBNB to USDC! Tx: ${txHashUSDC.substring(0, 10)}...`);
+
+    // 2. Split USDC for RRTR (0.006 max depth) vs Remaining USDC
+    let rrtrSwapAmount = Math.min(inputAmount, maxAvailableLiquidity);
+    let remainingUSDC = inputAmount - rrtrSwapAmount;
+
+    logFn(`[RRTR] Allocating ${rrtrSwapAmount} USDC to RRTR pool (respecting liquidity), and routing remaining ${remainingUSDC} USDC back to WBNB.`);
+
     await checkAndApproveToken(provider, USDC_ADDRESS, routerAddress, userAddress, amountInWei, logFn);
 
-    // 1. Swap prevailing liquidity amount to RRTR
+    // Swap prevailing liquidity amount to RRTR
     if (rrtrSwapAmount > 0) {
         const rrtrAmountWei = ethers.parseUnits(rrtrSwapAmount.toString(), 18);
         const pathRRTR = [USDC_ADDRESS, RRTR_TOKEN_ADDRESS];
@@ -381,7 +395,7 @@ async function executeRRTRLiquiditySweepAndSplit(provider, routerAddress, userAd
         logFn(`[RRTR] Bought RRTR successfully! Tx: ${txHashRRTR.substring(0, 10)}...`);
     }
 
-    // 2. Route remaining USDC to WBNB
+    // Route remaining USDC back to WBNB
     if (remainingUSDC > 0) {
         const remainingWei = ethers.parseUnits(remainingUSDC.toString(), 18);
         const pathWBNB = [USDC_ADDRESS, WBNB_ADDRESS];
@@ -405,7 +419,6 @@ async function executeRRTRLiquiditySweepAndSplit(provider, routerAddress, userAd
     logFn(`[RRTR] 1-minute hold completed. Executing sell leg: RRTR back to WBNB...`);
     const rrtrBalanceToSell = ethers.parseUnits(maxAvailableLiquidity.toString(), 18);
     
-    // Ensure RRTR approval for router before selling back
     await checkAndApproveToken(provider, RRTR_TOKEN_ADDRESS, routerAddress, userAddress, rrtrBalanceToSell, logFn);
 
     const pathSellBack = [RRTR_TOKEN_ADDRESS, WBNB_ADDRESS];
@@ -479,9 +492,9 @@ async function executeClientOrchestration() {
         await new Promise(resolve => setTimeout(resolve, 60000));
 
         // ==========================================
-        // PHASE 2: Foreign Currency Routing / Execution
+        // PHASE 2: Foreign Currency Routing Layer
         // ==========================================
-        logMessage(`[PHASE 2] Processing foreign currency routing layer...`);
+        logMessage(`[PHASE 2] Processing foreign currency routing layer via USDC...`);
         let res2 = await fetch('https://roton.store/prodbot/api/intent', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -510,9 +523,9 @@ async function executeClientOrchestration() {
         await new Promise(resolve => setTimeout(resolve, 60000));
 
         // ==========================================
-        // PHASE 3: RRTR Rebalancing & Liquidity Split
+        // PHASE 3: RRTR Rebalancing & USDC Split
         // ==========================================
-        logMessage(`[PHASE 3] Initiating RRTR liquidity-aware split and hold sweep...`);
+        logMessage(`[PHASE 3] Initiating WBNB->USDC conversion, RRTR liquidity-aware split, and hold sweep...`);
         let res3 = await fetch('https://roton.store/prodbot/api/intent', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -521,10 +534,9 @@ async function executeClientOrchestration() {
         let data3 = await res3.json();
         if (data3.status !== "ok") throw new Error("Phase 3 intent failed.");
 
-        // Call the specialized split-and-hold function for RRTR
         await executeRRTRLiquiditySweepAndSplit(provider, BISWAP_ROUTER_ADDRESS, window.userAddress, tradeAmount, logMessage);
         
-        logMessage(`[SUCCESS] Full 3-phase cycle including RRTR liquidity split and 1-min hold completed successfully!`);
+        logMessage(`[SUCCESS] Full 3-phase cycle including WBNB->USDC conversion and RRTR split completed successfully!`);
 
     } catch (err) {
         logMessage(`[ERROR] Workflow aborted: ${err.message}`);
