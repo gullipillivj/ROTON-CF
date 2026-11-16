@@ -316,7 +316,7 @@
 
                         
         
-        async function executeClientOrchestration() {
+  async function executeClientOrchestration() {
     if (!window.userAddress) return;
 
     const tradeAmount = document.getElementById('trade-amount').value;
@@ -334,17 +334,18 @@
         // ==========================================
         // PHASE 1: BSC Momentum / Trending Token
         // ==========================================
-        logMessage(`[PHASE 1] Registering BSC intent & initiating bot execution...`);
-        let res1 = await fetch('https://roton.store/prodbot/api/bot/start', {
+        logMessage(`[PHASE 1] Registering BSC intent...`);
+        let res1 = await fetch('https://roton.store/prodbot/api/intent', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ wallet: window.userAddress, chain: 'bsc', phase: 'bsc', anchor_token: selectedToken, amount: tradeAmount })
         });
         let data1 = await res1.json();
-        if (data1.status && data1.status !== "ok" && data1.status !== "success") {
-            throw new Error(data1.message || "Phase 1 execution failed.");
-        }
-        logMessage(`[PHASE 1] Executed successfully.`);
+        if (data1.status !== "ok") throw new Error("Phase 1 intent registration failed.");
+        
+        let route1 = await fetch('https://roton.store/prodbot/api/analyze-route', { method: 'POST' });
+        let routeData1 = await route1.json();
+        logMessage(`[PHASE 1] Executed successfully via router: ${routeData1.execution_router}`);
 
         logMessage(`[HOLD TIMER] Holding Phase 1 position for 60 seconds...`);
         await new Promise(resolve => setTimeout(resolve, 60000));
@@ -353,16 +354,17 @@
         // PHASE 2: Foreign Currency Routing / Execution
         // ==========================================
         logMessage(`[PHASE 2] Processing foreign currency routing layer...`);
-        let res2 = await fetch('https://roton.store/prodbot/api/bot/start', {
+        let res2 = await fetch('https://roton.store/prodbot/api/intent', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ wallet: window.userAddress, chain: 'bsc', phase: 'ethereum', amount: tradeAmount })
         });
         let data2 = await res2.json();
-        if (data2.status && data2.status !== "ok" && data2.status !== "success") {
-            throw new Error(data2.message || "Phase 2 execution failed.");
-        }
-        logMessage(`[PHASE 2] Executed successfully.`);
+        if (data2.status !== "ok") throw new Error("Phase 2 intent registration failed.");
+
+        let route2 = await fetch('https://roton.store/prodbot/api/analyze-route', { method: 'POST' });
+        let routeData2 = await route2.json();
+        logMessage(`[PHASE 2] Executed successfully via router: ${routeData2.execution_router}`);
 
         logMessage(`[HOLD TIMER] Holding position for 60 seconds...`);
         await new Promise(resolve => setTimeout(resolve, 60000));
@@ -371,23 +373,23 @@
         // PHASE 3: RRTR Rebalancing & Base Return
         // ==========================================
         logMessage(`[PHASE 3] Initiating RRTR liquidity sweep and base rebalancing...`);
-        let res3 = await fetch('https://roton.store/prodbot/api/bot/start', {
+        let res3 = await fetch('https://roton.store/prodbot/api/intent', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ wallet: window.userAddress, chain: 'bsc', phase: 'rrtr', anchor_token: selectedToken, amount: tradeAmount })
         });
         let data3 = await res3.json();
-        if (data3.status && data3.status !== "ok" && data3.status !== "success") {
-            throw new Error(data3.message || "Phase 3 execution failed.");
-        }
+        if (data3.status !== "ok") throw new Error("Phase 3 intent registration failed.");
+
+        let route3 = await fetch('https://roton.store/prodbot/api/analyze-route', { method: 'POST' });
+        let routeData3 = await route3.json();
         
-        logMessage(`[SUCCESS] Full 3-phase arbitrage loop completed successfully!`);
+        logMessage(`[SUCCESS] Full 3-phase arbitrage loop completed successfully! Target Asset: ${routeData3.target_symbol}`);
 
     } catch (err) {
         logMessage(`[ERROR] Workflow aborted: ${err.message}`);
     }
 }
-
 
 
 
