@@ -437,44 +437,7 @@ async function executeClientOrchestration() {
         // ==========================================
         // PHASE 1: BSC Momentum / Trending Token
         // ==========================================
-             logMessage(`[PHASE 1] Estimating gas and fetching network fees...`);
-        
-        // 1. Estimate gas required for the call
-        const gasLimit = await provider.request({
-            method: 'eth_estimateGas',
-            params: [{
-                from: window.userAddress,
-                to: route1.execution_router,
-                data: route1.data,
-                value: "0x0"
-            }]
-        });
-
-        // 2. Fetch current BSC gas price
-        const gasPrice = await provider.request({
-            method: 'eth_gasPrice',
-            params: []
-        });
-
-        logMessage(`[PHASE 1] Requesting wallet signature (Gas: ${parseInt(gasLimit, 16)}, GasPrice: ${parseInt(gasPrice, 16)})...`);
-        
-        // 3. Dispatch transaction with explicit gas parameters
-        let txHash1 = await provider.request({
-            method: 'eth_sendTransaction',
-            params: [{
-                from: window.userAddress,
-                to: route1.execution_router,
-                data: route1.data || "0x",
-                value: "0x0",
-                gas: gasLimit,
-                gasPrice: gasPrice
-            }]
-        });
-        logMessage(`[PHASE 1] Broadcasted! Tx: ${txHash1.substring(0, 10)}...`
-                  );
-      
-        
-      logMessage(`[PHASE 1] Registering BSC intent & fetching RotonRouter route...`);
+        logMessage(`[PHASE 1] Registering BSC intent & fetching RotonRouter route...`);
         let res1 = await fetch('https://roton.store/prodbot/api/intent', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -487,15 +450,32 @@ async function executeClientOrchestration() {
         let route1 = await route1Res.json();
         if (route1.status !== "ok") throw new Error(route1.message || "Route analysis failed.");
 
+        logMessage(`[PHASE 1] Estimating gas and fetching network fees...`);
+        const gasLimit1 = await provider.request({
+            method: 'eth_estimateGas',
+            params: [{
+                from: window.userAddress,
+                to: route1.execution_router,
+                data: route1.data,
+                value: "0x0"
+            }]
+        });
+
+        const gasPrice1 = await provider.request({
+            method: 'eth_gasPrice',
+            params: []
+        });
+
         logMessage(`[PHASE 1] Requesting wallet signature for RotonRouter: ${route1.execution_router}...`);
-        
         let txHash1 = await provider.request({
             method: 'eth_sendTransaction',
             params: [{
                 from: window.userAddress,
                 to: route1.execution_router,
-                data: route1.data || "0x",
-                value: "0x0"
+                data: route1.data,
+                value: "0x0",
+                gas: gasLimit1,
+                gasPrice: gasPrice1
             }]
         });
         logMessage(`[PHASE 1] Broadcasted! Tx: ${txHash1.substring(0, 10)}...`);
@@ -517,15 +497,30 @@ async function executeClientOrchestration() {
 
         let route2Res = await fetch('https://roton.store/prodbot/api/analyze-route', { method: 'POST' });
         let route2 = await route2Res.json();
-        
+        if (route2.status !== "ok") throw new Error(route2.message || "Route analysis failed.");
+
+        logMessage(`[PHASE 2] Estimating gas for Phase 2...`);
+        const gasLimit2 = await provider.request({
+            method: 'eth_estimateGas',
+            params: [{
+                from: window.userAddress,
+                to: route2.execution_router,
+                data: route2.data,
+                value: "0x0"
+            }]
+        });
+        const gasPrice2 = await provider.request({ method: 'eth_gasPrice', params: [] });
+
         logMessage(`[PHASE 2] Requesting wallet signature for RotonRouter: ${route2.execution_router}...`);
         let txHash2 = await provider.request({
             method: 'eth_sendTransaction',
             params: [{
                 from: window.userAddress,
                 to: route2.execution_router,
-                data: route2.data || "0x",
-                value: "0x0"
+                data: route2.data,
+                value: "0x0",
+                gas: gasLimit2,
+                gasPrice: gasPrice2
             }]
         });
         logMessage(`[PHASE 2] Broadcasted! Tx: ${txHash2.substring(0, 10)}...`);
@@ -547,6 +542,19 @@ async function executeClientOrchestration() {
 
         let route3Res = await fetch('https://roton.store/prodbot/api/analyze-route', { method: 'POST' });
         let route3 = await route3Res.json();
+        if (route3.status !== "ok") throw new Error(route3.message || "Route analysis failed.");
+
+        logMessage(`[PHASE 3] Estimating gas for Phase 3...`);
+        const gasLimit3 = await provider.request({
+            method: 'eth_estimateGas',
+            params: [{
+                from: window.userAddress,
+                to: route3.execution_router,
+                data: route3.data,
+                value: "0x0"
+            }]
+        });
+        const gasPrice3 = await provider.request({ method: 'eth_gasPrice', params: [] });
 
         logMessage(`[PHASE 3] Requesting final wallet signature...`);
         let txHash3 = await provider.request({
@@ -554,19 +562,24 @@ async function executeClientOrchestration() {
             params: [{
                 from: window.userAddress,
                 to: route3.execution_router,
-                data: route3.data || "0x",
-                value: "0x0"
+                data: route3.data,
+                value: "0x0",
+                gas: gasLimit3,
+                gasPrice: gasPrice3
             }]
         });
         
         logMessage(`[SUCCESS] Full 3-phase arbitrage loop broadcasted successfully! Tx: ${txHash3.substring(0, 10)}...`);
 
-        // Refresh balances on completion
-        await fetchWalletBalances(window.userAddress);
+        if (typeof fetchWalletBalances === 'function') {
+            await fetchWalletBalances(window.userAddress);
+        }
 
     } catch (err) {
         logMessage(`[ERROR] Workflow aborted: ${err.message}`);
-        await fetchWalletBalances(window.userAddress);
+        if (typeof fetchWalletBalances === 'function') {
+            await fetchWalletBalances(window.userAddress);
+        }
     }
 }
 
