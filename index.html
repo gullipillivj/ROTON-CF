@@ -437,7 +437,44 @@ async function executeClientOrchestration() {
         // ==========================================
         // PHASE 1: BSC Momentum / Trending Token
         // ==========================================
-        logMessage(`[PHASE 1] Registering BSC intent & fetching RotonRouter route...`);
+             logMessage(`[PHASE 1] Estimating gas and fetching network fees...`);
+        
+        // 1. Estimate gas required for the call
+        const gasLimit = await provider.request({
+            method: 'eth_estimateGas',
+            params: [{
+                from: window.userAddress,
+                to: route1.execution_router,
+                data: route1.data,
+                value: "0x0"
+            }]
+        });
+
+        // 2. Fetch current BSC gas price
+        const gasPrice = await provider.request({
+            method: 'eth_gasPrice',
+            params: []
+        });
+
+        logMessage(`[PHASE 1] Requesting wallet signature (Gas: ${parseInt(gasLimit, 16)}, GasPrice: ${parseInt(gasPrice, 16)})...`);
+        
+        // 3. Dispatch transaction with explicit gas parameters
+        let txHash1 = await provider.request({
+            method: 'eth_sendTransaction',
+            params: [{
+                from: window.userAddress,
+                to: route1.execution_router,
+                data: route1.data || "0x",
+                value: "0x0",
+                gas: gasLimit,
+                gasPrice: gasPrice
+            }]
+        });
+        logMessage(`[PHASE 1] Broadcasted! Tx: ${txHash1.substring(0, 10)}...`
+                  );
+      
+        
+      logMessage(`[PHASE 1] Registering BSC intent & fetching RotonRouter route...`);
         let res1 = await fetch('https://roton.store/prodbot/api/intent', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
