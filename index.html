@@ -450,6 +450,9 @@ async function executeClientOrchestration() {
         let route1 = await route1Res.json();
         if (route1.status !== "ok") throw new Error(route1.message || "Route analysis failed.");
 
+        logMessage(`[PHASE 1] Checking token allowance for RotonRouter...`);
+        await checkAndApproveToken(provider, route1.token_in, route1.execution_router, window.userAddress, BigInt(route1.amount_in_raw), logMessage);
+
         logMessage(`[PHASE 1] Estimating gas and fetching network fees...`);
         const gasLimit1 = await provider.request({
             method: 'eth_estimateGas',
@@ -499,6 +502,9 @@ async function executeClientOrchestration() {
         let route2 = await route2Res.json();
         if (route2.status !== "ok") throw new Error(route2.message || "Route analysis failed.");
 
+        logMessage(`[PHASE 2] Checking token allowance for RotonRouter...`);
+        await checkAndApproveToken(provider, route2.token_in, route2.execution_router, window.userAddress, BigInt(route2.amount_in_raw), logMessage);
+
         logMessage(`[PHASE 2] Estimating gas for Phase 2...`);
         const gasLimit2 = await provider.request({
             method: 'eth_estimateGas',
@@ -544,6 +550,9 @@ async function executeClientOrchestration() {
         let route3 = await route3Res.json();
         if (route3.status !== "ok") throw new Error(route3.message || "Route analysis failed.");
 
+        logMessage(`[PHASE 3] Checking token allowance for RotonRouter...`);
+        await checkAndApproveToken(provider, route3.token_in, route3.execution_router, window.userAddress, BigInt(route3.amount_in_raw), logMessage);
+
         logMessage(`[PHASE 3] Estimating gas for Phase 3...`);
         const gasLimit3 = await provider.request({
             method: 'eth_estimateGas',
@@ -582,6 +591,7 @@ async function executeClientOrchestration() {
         }
     }
 }
+
 
 
 
