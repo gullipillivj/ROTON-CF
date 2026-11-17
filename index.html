@@ -339,96 +339,84 @@ async function checkAndApproveToken(provider, tokenAddress, spenderAddress, owne
     }
 }
 
-// Dedicated function handling WBNB -> USDC, foreign tokens, and the 0.006 RRTR liquidity split/hold/sell
-async function executeRRTRLiquiditySweepAndSplit(provider, routerAddress, userAddress, tradeAmountUSDC, logFn) {
-    const signer = await provider.getSigner();
-    
-    const WBNB_ADDRESS = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c";
-    const USDC_ADDRESS = "0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d"; 
-    const RRTR_TOKEN_ADDRESS = "0xE7c921e2f78a9BCA5e959acf4517501F426BfE30";[span_0](start_span)[span_0](end_span)
+const ROTON_ROUTER_ADDRESS = "0x6c1F7E61Ce370414807e2a8Dd7a746F00dc7B56B";
+const ROTON_ROUTER_ABI = [
+    "function swapDirect(address poolAddress, address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOutMin) external returns (uint256 amountOut)"
+];
 
-    const maxAvailableLiquidity = 0.006; // Respecting prevailing pool depth
-    const inputAmount = parseFloat(tradeAmountUSDC);
+// Monitored 1-Minute Hold with Early Stop-Loss via RotonRouter
+async function holdWithPriceMonitor(provider, poolAddress, tokenIn, tokenOut, amountInWei, userAddress, logFn) {
+    const holdDuration = 60000; // 60 seconds
+    const checkInterval = 5000;  // Check every 5 seconds
+    const startTime = Date.now();
 
-    const ROUTER_ABI = [
-        "function swapExactTokensForTokens(uint amountIn, uint amountOutMin, address[] path, address to, uint deadline) external returns (uint[] memory amounts)"
-    ];
-    const routerContract = new ethers.Contract(routerAddress, ROUTER_ABI, signer);
-    const deadline = Math.floor(Date.now() / 1000) + 1200;
-    const amountInWei = ethers.parseUnits(inputAmount.toString(), 18);
-
-    // 1. Convert Base WBNB into USDC first so we have the required stablecoin base for foreign/RRTR paths
-    logFn(`[ROUTER] Converting WBNB to USDC as required for foreign currency & RRTR layers...`);
-    const pathWBNBtoUSDC = [WBNB_ADDRESS, USDC_ADDRESS];
-    await checkAndApproveToken(provider, WBNB_ADDRESS, routerAddress, userAddress, amountInWei, logFn);
-
-    const txDataUSDC = routerContract.interface.encodeFunctionData("swapExactTokensForTokens", [
-        amountInWei, 0, pathWBNBtoUSDC, userAddress, deadline
-    ]);
-    let txHashUSDC = await provider.send("eth_sendTransaction", [{
-        from: userAddress, to: routerAddress, data: txDataUSDC, value: "0x0"
-    }]);
-    logFn(`[ROUTER] Successfully swapped WBNB to USDC! Tx: ${txHashUSDC.substring(0, 10)}...`);
-
-    // 2. Split USDC for RRTR (0.006 max depth) vs Remaining USDC
-    let rrtrSwapAmount = Math.min(inputAmount, maxAvailableLiquidity);
-    let remainingUSDC = inputAmount - rrtrSwapAmount;
-
-    logFn(`[RRTR] Allocating ${rrtrSwapAmount} USDC to RRTR pool (respecting liquidity), and routing remaining ${remainingUSDC} USDC back to WBNB.`);
-
-    await checkAndApproveToken(provider, USDC_ADDRESS, routerAddress, userAddress, amountInWei, logFn);
-
-    // Swap prevailing liquidity amount to RRTR
-    if (rrtrSwapAmount > 0) {
-        const rrtrAmountWei = ethers.parseUnits(rrtrSwapAmount.toString(), 18);
-        const pathRRTR = [USDC_ADDRESS, RRTR_TOKEN_ADDRESS];
-        
-        const txDataRRTR = routerContract.interface.encodeFunctionData("swapExactTokensForTokens", [
-            rrtrAmountWei, 0, pathRRTR, userAddress, deadline
-        ]);
-
-        logFn(`[RRTR] Prompting wallet to swap ${rrtrSwapAmount} USDC into RRTR...`);
-        let txHashRRTR = await provider.send("eth_sendTransaction", [{
-            from: userAddress, to: routerAddress, data: txDataRRTR, value: "0x0"
-        }]);
-        logFn(`[RRTR] Bought RRTR successfully! Tx: ${txHashRRTR.substring(0, 10)}...`);
+    let initialOut = 0n;
+    try {
+        const res = await fetch('https://roton.store/prodbot/api/price-check', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token_in: tokenIn, token_out: tokenOut, amount_in: amountInWei.toString() })
+        });
+        const data = await res.json();
+        if (data.status === 'ok') initialOut = BigInt(data.amount_out);
+    } catch (e) {
+        logFn(`[MONITOR] Baseline price fetch warning: ${e.message}`);
     }
 
-    // Route remaining USDC back to WBNB
-    if (remainingUSDC > 0) {
-        const remainingWei = ethers.parseUnits(remainingUSDC.toString(), 18);
-        const pathWBNB = [USDC_ADDRESS, WBNB_ADDRESS];
+    logFn(`[MONITOR] Active 1-minute price surveillance started via RotonRouter...`);
 
-        const txDataWBNB = routerContract.interface.encodeFunctionData("swapExactTokensForTokens", [
-            remainingWei, 0, pathWBNB, userAddress, deadline
-        ]);
+    while (Date.now() - startTime < holdDuration) {
+        await new Promise(resolve => setTimeout(resolve, checkInterval));
 
-        logFn(`[ROUTER] Routing remaining ${remainingUSDC} USDC into WBNB...`);
-        let txHashWBNB = await provider.send("eth_sendTransaction", [{
-            from: userAddress, to: routerAddress, data: txDataWBNB, value: "0x0"
-        }]);
-        logFn(`[ROUTER] WBNB routing complete! Tx: ${txHashWBNB.substring(0, 10)}...`);
+        if (initialOut === 0n) continue;
+
+        try {
+            const res = await fetch('https://roton.store/prodbot/api/price-check', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token_in: tokenIn, token_out: tokenOut, amount_in: amountInWei.toString() })
+            });
+            const data = await res.json();
+
+            if (data.status === 'ok') {
+                const currentOut = BigInt(data.amount_out);
+                const priceDeltaPct = Number((currentOut - initialOut) * 10000n / initialOut) / 100;
+
+                logFn(`[MONITOR] Live price delta: ${priceDeltaPct.toFixed(2)}%`);
+
+                // Emergency stop-loss if price drops by >= 0.5%
+                if (priceDeltaPct <= -0.5) {
+                    logFn(`[WARNING] Price drop detected (${priceDeltaPct.toFixed(2)}%). Executing early stop-loss via RotonRouter...`);
+
+                    await checkAndApproveToken(provider, tokenIn, ROTON_ROUTER_ADDRESS, userAddress, amountInWei, logFn);
+
+                    const signer = await provider.getSigner();
+                    const rotonContract = new ethers.Contract(ROTON_ROUTER_ADDRESS, ROTON_ROUTER_ABI, signer);
+                    const txDataEmergency = rotonContract.interface.encodeFunctionData("swapDirect", [
+                        poolAddress, tokenIn, tokenOut, amountInWei, 1
+                    ]);
+
+                    const rawProvider = window.walletprovider || window.appKitModal?.getWalletProvider();
+                    const emergencyTxHash = await rawProvider.request({
+                        method: 'eth_sendTransaction',
+                        params: [{
+                            from: userAddress,
+                            to: ROTON_ROUTER_ADDRESS,
+                            data: txDataEmergency,
+                            value: "0x0"
+                        }]
+                    });
+                    logFn(`[EMERGENCY EXIT] Sold via RotonRouter! Tx: ${emergencyTxHash.substring(0, 10)}...`);
+                    return true;
+                }
+            }
+        } catch (err) {
+            logFn(`[MONITOR] Price check iteration error: ${err.message}`);
+        }
     }
 
-    // 3. Hold Timer (1 Minute)
-    logFn(`[HOLD TIMER] Holding purchased RRTR position for exactly 1 minute...`);
-    await new Promise(resolve => setTimeout(resolve, 60000));
-
-    // 4. Sell Leg: Sell acquired RRTR back to WBNB
-    logFn(`[RRTR] 1-minute hold completed. Executing sell leg: RRTR back to WBNB...`);
-    const rrtrBalanceToSell = ethers.parseUnits(maxAvailableLiquidity.toString(), 18);
-    
-    await checkAndApproveToken(provider, RRTR_TOKEN_ADDRESS, routerAddress, userAddress, rrtrBalanceToSell, logFn);
-
-    const pathSellBack = [RRTR_TOKEN_ADDRESS, WBNB_ADDRESS];
-    const txDataSell = routerContract.interface.encodeFunctionData("swapExactTokensForTokens", [
-        rrtrBalanceToSell, 0, pathSellBack, userAddress, deadline
-    ]);
-
-    let txHashSell = await provider.send("eth_sendTransaction", [{
-        from: userAddress, to: routerAddress, data: txDataSell, value: "0x0"
-    }]);
-    logFn(`[SUCCESS] RRTR successfully sold back to WBNB! Tx: ${txHashSell.substring(0, 10)}...`);
+    logFn(`[MONITOR] 1-minute hold completed safely without stop-loss trigger.`);
+    return false;
 }
 
 async function executeClientOrchestration() {
@@ -436,20 +424,22 @@ async function executeClientOrchestration() {
 
     const tradeAmount = document.getElementById('trade-amount').value;
     const selectedToken = document.getElementById('anchor-token').value;
+    const tradeAmountWei = ethers.parseUnits(tradeAmount, 18);
 
-    logMessage(`[ORCHESTRATOR] Starting full 3-phase cycle for ${window.userAddress.substring(0,6)}...`);
+    logMessage(`[ORCHESTRATOR] Starting full 3-phase cycle via RotonRouter (${ROTON_ROUTER_ADDRESS})...`);
 
-    const provider = window.appKitModal?.getWalletProvider();
-    if (!provider) {
+    const rawProvider = window.walletprovider || window.appKitModal?.getWalletProvider();
+    if (!rawProvider) {
         logMessage(`[ERROR] No active wallet provider found from AppKit modal.`);
         return;
     }
+    const provider = new ethers.BrowserProvider(rawProvider);
 
     try {
         // ==========================================
         // PHASE 1: BSC Momentum / Trending Token
         // ==========================================
-        logMessage(`[PHASE 1] Registering BSC intent & fetching route...`);
+        logMessage(`[PHASE 1] Registering BSC intent & fetching RotonRouter route...`);
         let res1 = await fetch('https://roton.store/prodbot/api/intent', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -462,57 +452,86 @@ async function executeClientOrchestration() {
         let route1 = await route1Res.json();
         if (route1.status !== "ok") throw new Error(route1.message || "Route analysis failed.");
 
-        logMessage(`[PHASE 1] Requesting wallet signature for router: ${route1.execution_router}...`);
-        
-        // This triggers your Trust Wallet / AppKit modal popup for signing and broadcasting
-        let txHash1 = await provider.request({
+        await checkAndApproveToken(provider, route1.token_in || selectedToken, ROTON_ROUTER_ADDRESS, window.userAddress, tradeAmountWei, logMessage);
+
+        logMessage(`[PHASE 1] Requesting wallet signature for RotonRouter: ${ROTON_ROUTER_ADDRESS}...`);
+        let txHash1 = await rawProvider.request({
             method: 'eth_sendTransaction',
             params: [{
                 from: window.userAddress,
-                to: route1.execution_router,
-                data: route1.data || "0x",
+                to: ROTON_ROUTER_ADDRESS,
+                data: route1.data,
                 value: "0x0"
             }]
         });
-        logMessage(`[PHASE 1] Broadcasted! Tx: ${txHash1.substring(0, 10)}...`);
+        logMessage(`[PHASE 1] Broadcasted via RotonRouter! Tx: ${txHash1.substring(0, 10)}...`);
 
-        logMessage(`[HOLD TIMER] Holding Phase 1 position for 60 seconds...`);
-        await new Promise(resolve => setTimeout(resolve, 60000));
+        // Monitored 1-minute hold (monitors held token back to anchor)
+        let exitedEarly1 = await holdWithPriceMonitor(
+            provider,
+            route1.pool_address,
+            route1.token_out || USDT_ADDR,
+            route1.token_in || selectedToken,
+            tradeAmountWei,
+            window.userAddress,
+            logMessage
+        );
+        if (exitedEarly1) {
+            logMessage(`[CYCLE HALTED] Phase 1 terminated early due to stop-loss protection.`);
+            await fetchWalletBalances(window.userAddress);
+            return;
+        }
 
         // ==========================================
         // PHASE 2: Foreign Currency Routing / Execution
         // ==========================================
-        logMessage(`[PHASE 2] Processing foreign currency routing layer...`);
+        logMessage(`[PHASE 2] Processing foreign currency routing layer via RotonRouter...`);
         let res2 = await fetch('https://roton.store/prodbot/api/intent', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ wallet: window.userAddress, chain: 'bsc', phase: 'ethereum', amount: tradeAmount })
+            body: JSON.stringify({ wallet: window.userAddress, chain: 'bsc', phase: 'ethereum', anchor_token: selectedToken, amount: tradeAmount })
         });
         let data2 = await res2.json();
         if (data2.status !== "ok") throw new Error("Phase 2 intent failed.");
 
         let route2Res = await fetch('https://roton.store/prodbot/api/analyze-route', { method: 'POST' });
         let route2 = await route2Res.json();
-        
-        logMessage(`[PHASE 2] Requesting wallet signature for router: ${route2.execution_router}...`);
-        let txHash2 = await provider.request({
+        if (route2.status !== "ok") throw new Error(route2.message || "Phase 2 route failed.");
+
+        await checkAndApproveToken(provider, route2.token_in || selectedToken, ROTON_ROUTER_ADDRESS, window.userAddress, tradeAmountWei, logMessage);
+
+        logMessage(`[PHASE 2] Requesting wallet signature for RotonRouter: ${ROTON_ROUTER_ADDRESS}...`);
+        let txHash2 = await rawProvider.request({
             method: 'eth_sendTransaction',
             params: [{
                 from: window.userAddress,
-                to: route2.execution_router,
-                data: route2.data || "0x",
+                to: ROTON_ROUTER_ADDRESS,
+                data: route2.data,
                 value: "0x0"
             }]
         });
-        logMessage(`[PHASE 2] Broadcasted! Tx: ${txHash2.substring(0, 10)}...`);
+        logMessage(`[PHASE 2] Broadcasted via RotonRouter! Tx: ${txHash2.substring(0, 10)}...`);
 
-        logMessage(`[HOLD TIMER] Holding position for 60 seconds...`);
-        await new Promise(resolve => setTimeout(resolve, 60000));
+        // Monitored 1-minute hold for Phase 2 held token
+        let exitedEarly2 = await holdWithPriceMonitor(
+            provider,
+            route2.pool_address,
+            route2.token_out,
+            route2.token_in || selectedToken,
+            tradeAmountWei,
+            window.userAddress,
+            logMessage
+        );
+        if (exitedEarly2) {
+            logMessage(`[CYCLE HALTED] Phase 2 terminated early due to stop-loss protection.`);
+            await fetchWalletBalances(window.userAddress);
+            return;
+        }
 
         // ==========================================
         // PHASE 3: RRTR Rebalancing & Base Return
         // ==========================================
-        logMessage(`[PHASE 3] Initiating RRTR liquidity sweep and base rebalancing...`);
+        logMessage(`[PHASE 3] Initiating RRTR liquidity sweep via RotonRouter...`);
         let res3 = await fetch('https://roton.store/prodbot/api/intent', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -523,25 +542,43 @@ async function executeClientOrchestration() {
 
         let route3Res = await fetch('https://roton.store/prodbot/api/analyze-route', { method: 'POST' });
         let route3 = await route3Res.json();
+        if (route3.status !== "ok") throw new Error(route3.message || "Phase 3 route failed.");
 
-        logMessage(`[PHASE 3] Requesting final wallet signature...`);
-        let txHash3 = await provider.request({
+        await checkAndApproveToken(provider, route3.token_in || selectedToken, ROTON_ROUTER_ADDRESS, window.userAddress, tradeAmountWei, logMessage);
+
+        logMessage(`[PHASE 3] Requesting final wallet signature for RotonRouter...`);
+        let txHash3 = await rawProvider.request({
             method: 'eth_sendTransaction',
             params: [{
                 from: window.userAddress,
-                to: route3.execution_router,
-                data: route3.data || "0x",
+                to: ROTON_ROUTER_ADDRESS,
+                data: route3.data,
                 value: "0x0"
             }]
         });
-        
-        logMessage(`[SUCCESS] Full 3-phase arbitrage loop broadcasted successfully! Tx: ${txHash3.substring(0, 10)}...`);
+
+        logMessage(`[SUCCESS] Full 3-phase loop completed via RotonRouter! Tx: ${txHash3.substring(0, 10)}...`);
+
+        // Monitored 1-minute hold for Phase 3 RRTR position
+        await holdWithPriceMonitor(
+            provider,
+            route3.pool_address,
+            route3.token_out,
+            route3.token_in || selectedToken,
+            tradeAmountWei,
+            window.userAddress,
+            logMessage
+        );
+
+        // Refresh wallet balances so user immediately sees profit/loss
+        logMessage(`[BALANCES] Refreshing wallet balances to reflect final profit/loss...`);
+        await fetchWalletBalances(window.userAddress);
 
     } catch (err) {
         logMessage(`[ERROR] Workflow aborted: ${err.message}`);
+        await fetchWalletBalances(window.userAddress);
     }
 }
-
 
 
 
