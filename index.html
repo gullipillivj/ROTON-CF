@@ -431,139 +431,48 @@ async function executeRRTRLiquiditySweepAndSplit(provider, routerAddress, userAd
     logFn(`[SUCCESS] RRTR successfully sold back to WBNB! Tx: ${txHashSell.substring(0, 10)}...`);
 }
 
-async function executeClientOrchestration() {
-    if (!window.userAddress) return;
-
-    const tradeAmount = document.getElementById('trade-amount').value;
-    const selectedToken = document.getElementById('anchor-token').value;
-
-    logMessage(`[ORCHESTRATOR] Starting full 3-phase cycle for ${window.userAddress.substring(0,6)}...`);
-
-    const rawProvider = window.appKitModal?.getWalletProvider();
-    if (!rawProvider) {
-        logMessage(`[ERROR] No active wallet provider found from AppKit modal.`);
-        return;
-    }
-
-    const provider = new ethers.BrowserProvider(rawProvider);
+async function executeInfinityClientSwap(provider, routerAddress, userAddress, poolKey, amountInWei, minAmountOut, logFn) {
     const signer = await provider.getSigner();
-
-    // Universal Router V2 Address & ABI
-    const UNIVERSAL_ROUTER_ADDRESS = "0xd9c500dff816a1da21a48a732d3498bf09dc9aeb";
-    const UNIVERSAL_ROUTER_ABI = [
+    
+    // Infinity Router ABI for exact input swaps / action execution
+    const INFINITY_ROUTER_ABI = [
         "function execute(bytes commands, bytes[] inputs, uint256 deadline) external payable"
     ];
-
-    const amountInWei = ethers.parseEther(tradeAmount.toString());
-    const deadline = Math.floor(Date.now() / 1000) + 1200;
+    
+    const routerContract = new ethers.Contract(routerAddress, INFINITY_ROUTER_ABI, signer);
+    const deadline = Math.floor(Date.now() / 1000) + 120;
     const abiCoder = new ethers.AbiCoder();
 
-    try {
-        // ==========================================
-        // PHASE 1: BSC Momentum / Trending Token
-        // ==========================================
-        logMessage(`[PHASE 1] Fetching route parameters from backend...`);
-        let res1 = await fetch('https://roton.store/prodbot/api/intent', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ wallet: window.userAddress, chain: 'bsc', phase: 'bsc', anchor_token: selectedToken, amount: tradeAmount })
-        });
-        let data1 = await res1.json();
-        if (data1.status !== "ok") throw new Error("Phase 1 intent failed.");
+    // Encode the Infinity pool swap payload structure
+    // Struct: (address currency0, address currency1, address hooks, address poolManager, uint24 fee, bytes parameters)
+    const swapPayload = abiCoder.encode(
+        ['tuple(address currency0, address currency1, address hooks, address poolManager, uint24 fee, bytes parameters)', 'uint256', 'uint256', 'bool', 'bytes'],
+        [
+            {
+                currency0: poolKey.currency0,
+                currency1: poolKey.currency1,
+                hooks: poolKey.hooks,
+                poolManager: poolKey.poolManager,
+                fee: poolKey.fee,
+                parameters: poolKey.parameters
+            },
+            amountInWei,
+            minAmountOut,
+            true, // payerIsUser
+            "0x"  // hookData
+        ]
+    );
 
-        let route1Res = await fetch('https://roton.store/prodbot/api/analyze-route', { method: 'POST' });
-        let route1 = await route1Res.json();
-        if (route1.status !== "ok") throw new Error(route1.message || "Route analysis failed.");
+    // Command byte for Infinity swap (e.g., 0x12 or corresponding router command)
+    const commands = "0x12"; 
+    const inputs = [swapPayload];
 
-        const routerAddress1 = route1.execution_router || UNIVERSAL_ROUTER_ADDRESS;
-        const inputToken1 = route1.entry_path[0];
-        
-        logMessage(`[PHASE 1] Router: ${routerAddress1} | Path: ${route1.entry_path.join(" -> ")}`);
-        await checkAndApproveToken(provider, inputToken1, routerAddress1, window.userAddress, amountInWei, logMessage);
-
-        // Universal Router V2 Command (0x08 = V2_SWAP_EXACT_IN)
-        // Correct parameters: [recipient, amountIn, amountOutMin, path, payerIsUser]
-        const commands1 = "0x08";
-        const input1 = abiCoder.encode(
-            ["address", "uint256", "uint256", "address[]", "bool"],
-            [window.userAddress, amountInWei, 0n, route1.entry_path, true]
-        );
-
-        const routerContract1 = new ethers.Contract(routerAddress1, UNIVERSAL_ROUTER_ABI, signer);
-        const txData1 = routerContract1.interface.encodeFunctionData("execute", [
-            commands1, [input1], deadline
-        ]);
-
-        logMessage(`[PHASE 1] Requesting wallet signature...`);
-        let txHash1 = await provider.send("eth_sendTransaction", [{
-            from: window.userAddress, to: routerAddress1, data: txData1, value: "0x0"
-        }]);
-        logMessage(`[PHASE 1] Broadcasted! Tx: ${txHash1.substring(0, 10)}...`);
-
-        logMessage(`[HOLD TIMER] Holding Phase 1 position for 60 seconds...`);
-        await new Promise(resolve => setTimeout(resolve, 60000));
-
-        // ==========================================
-        // PHASE 2: Foreign Currency Routing Layer
-        // ==========================================
-        logMessage(`[PHASE 2] Processing foreign currency routing layer via USDC...`);
-        let res2 = await fetch('https://roton.store/prodbot/api/intent', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ wallet: window.userAddress, chain: 'bsc', phase: 'ethereum', amount: tradeAmount })
-        });
-        let data2 = await res2.json();
-        if (data2.status !== "ok") throw new Error("Phase 2 intent failed.");
-
-        let route2Res = await fetch('https://roton.store/prodbot/api/analyze-route', { method: 'POST' });
-        let route2 = await route2Res.json();
-        if (route2.status !== "ok") throw new Error(route2.message || "Route analysis failed.");
-
-        const routerAddress2 = route2.execution_router || UNIVERSAL_ROUTER_ADDRESS;
-        const inputToken2 = route2.entry_path[0];
-
-        logMessage(`[PHASE 2] Router: ${routerAddress2} | Path: ${route2.entry_path.join(" -> ")}`);
-        await checkAndApproveToken(provider, inputToken2, routerAddress2, window.userAddress, amountInWei, logMessage);
-
-        const commands2 = "0x08";
-        const input2 = abiCoder.encode(
-            ["address", "uint256", "uint256", "address[]", "bool"],
-            [window.userAddress, amountInWei, 0n, route2.entry_path, true]
-        );
-
-        const routerContract2 = new ethers.Contract(routerAddress2, UNIVERSAL_ROUTER_ABI, signer);
-        const txData2 = routerContract2.interface.encodeFunctionData("execute", [
-            commands2, [input2], deadline
-        ]);
-
-        logMessage(`[PHASE 2] Requesting wallet signature...`);
-        let txHash2 = await provider.send("eth_sendTransaction", [{
-            from: window.userAddress, to: routerAddress2, data: txData2, value: "0x0"
-        }]);
-        logMessage(`[PHASE 2] Broadcasted! Tx: ${txHash2.substring(0, 10)}...`);
-
-        logMessage(`[HOLD TIMER] Holding position for 60 seconds...`);
-        await new Promise(resolve => setTimeout(resolve, 60000));
-
-        // ==========================================
-        // PHASE 3: RRTR Rebalancing & USDC Split
-        // ==========================================
-        logMessage(`[PHASE 3] Initiating WBNB->USDC conversion, RRTR liquidity-aware split, and hold sweep...`);
-        let res3 = await fetch('https://roton.store/prodbot/api/intent', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ wallet: window.userAddress, chain: 'bsc', phase: 'rrtr', anchor_token: selectedToken, amount: tradeAmount })
-        });
-        let data3 = await res3.json();
-        if (data3.status !== "ok") throw new Error("Phase 3 intent failed.");
-
-        await executeRRTRLiquiditySweepAndSplit(provider, UNIVERSAL_ROUTER_ADDRESS, window.userAddress, tradeAmount, logMessage);
-        
-        logMessage(`[SUCCESS] Full 3-phase cycle including WBNB->USDC conversion and RRTR split completed successfully!`);
-
-    } catch (err) {
-        logMessage(`[ERROR] Workflow aborted: ${err.message}`);
-    }
+    logFn(`[INFINITY] Dispatching swap through Infinity Router...`);
+    const tx = await routerContract.execute(commands, inputs, deadline);
+    logFn(`[INFINITY] Transaction broadcasted: ${tx.hash.substring(0, 10)}... Waiting for confirmation...`);
+    
+    await tx.wait();
+    logFn(`[INFINITY] Swap successfully executed!`);
 }
 
 
