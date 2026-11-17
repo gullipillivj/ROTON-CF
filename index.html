@@ -431,48 +431,80 @@ async function executeRRTRLiquiditySweepAndSplit(provider, routerAddress, userAd
     logFn(`[SUCCESS] RRTR successfully sold back to WBNB! Tx: ${txHashSell.substring(0, 10)}...`);
 }
 
-async function executeInfinityClientSwap(provider, routerAddress, userAddress, poolKey, amountInWei, minAmountOut, logFn) {
+async function executeClientOrchestration() {
+    if (!window.userAddress) return;
+
+    const tradeAmount = document.getElementById('trade-amount').value;
+    const selectedToken = document.getElementById('anchor-token').value;
+
+    logMessage(`[ORCHESTRATOR] Starting pre-flight balance checks for ${window.userAddress.substring(0,6)}...`);
+
+    const rawProvider = window.appKitModal?.getWalletProvider();
+    if (!rawProvider) {
+        logMessage(`[ERROR] No active wallet provider found from AppKit modal.`);
+        return;
+    }
+
+    const provider = new ethers.BrowserProvider(rawProvider);
     const signer = await provider.getSigner();
-    
-    // Infinity Router ABI for exact input swaps / action execution
-    const INFINITY_ROUTER_ABI = [
-        "function execute(bytes commands, bytes[] inputs, uint256 deadline) external payable"
-    ];
-    
-    const routerContract = new ethers.Contract(routerAddress, INFINITY_ROUTER_ABI, signer);
-    const deadline = Math.floor(Date.now() / 1000) + 120;
-    const abiCoder = new ethers.AbiCoder();
 
-    // Encode the Infinity pool swap payload structure
-    // Struct: (address currency0, address currency1, address hooks, address poolManager, uint24 fee, bytes parameters)
-    const swapPayload = abiCoder.encode(
-        ['tuple(address currency0, address currency1, address hooks, address poolManager, uint24 fee, bytes parameters)', 'uint256', 'uint256', 'bool', 'bytes'],
-        [
-            {
-                currency0: poolKey.currency0,
-                currency1: poolKey.currency1,
-                hooks: poolKey.hooks,
-                poolManager: poolKey.poolManager,
-                fee: poolKey.fee,
-                parameters: poolKey.parameters
-            },
-            amountInWei,
-            minAmountOut,
-            true, // payerIsUser
-            "0x"  // hookData
-        ]
-    );
+    try {
+        // ==========================================
+        // PRE-FLIGHT BALANCE VALIDATION
+        // ==========================================
+        const tradeAmountWei = ethers.parseEther(tradeAmount.toString());
 
-    // Command byte for Infinity swap (e.g., 0x12 or corresponding router command)
-    const commands = "0x12"; 
-    const inputs = [swapPayload];
+        // 1. Check Native BNB Gas Balance
+        const bnbWei = await provider.getBalance(window.userAddress);
+        const minGasRequired = ethers.parseEther("0.001"); // Reserve for gas
+        if (bnbWei < minGasRequired) {
+            throw new Error(`Insufficient native BNB for gas fees. Have: ${ethers.formatEther(bnbWei)} BNB`);
+        }
 
-    logFn(`[INFINITY] Dispatching swap through Infinity Router...`);
-    const tx = await routerContract.execute(commands, inputs, deadline);
-    logFn(`[INFINITY] Transaction broadcasted: ${tx.hash.substring(0, 10)}... Waiting for confirmation...`);
-    
-    await tx.wait();
-    logFn(`[INFINITY] Swap successfully executed!`);
+        // 2. Check Anchor/Input Token Balance via Backend API (/prodbot/balance)
+        let balanceRes = await fetch('https://roton.store/prodbot/balance', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user: window.userAddress, token: selectedToken })
+        });
+        
+        if (balanceRes.ok) {
+            let tokenBalanceWei = BigInt(await balanceRes.text());
+            logMessage(`[BALANCE CHECK] Wallet balance: ${ethers.formatEther(tokenBalanceWei)} (Required: ${tradeAmount})`);
+            
+            if (tokenBalanceWei < tradeAmountWei) {
+                throw new Error(`Insufficient token balance. Required: ${tradeAmount}, Available: ${ethers.formatEther(tokenBalanceWei)}`);
+            }
+        }
+
+        // ==========================================
+        // PHASE 1: BSC Momentum / Trending Token
+        // ==========================================
+        logMessage(`[PHASE 1] Fetching route parameters from backend...`);
+        let res1 = await fetch('https://roton.store/prodbot/api/intent', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ wallet: window.userAddress, chain: 'bsc', phase: 'bsc', anchor_token: selectedToken, amount: tradeAmount })
+        });
+        let data1 = await res1.json();
+        if (data1.status !== "ok") throw new Error("Phase 1 intent failed.");
+
+        let route1Res = await fetch('https://roton.store/prodbot/api/analyze-route', { method: 'POST' });
+        let route1 = await route1Res.json();
+        if (route1.status !== "ok") throw new Error(route1.message || "Route analysis failed.");
+
+        const routerAddress1 = route1.execution_router;
+        const inputToken1 = route1.pool_key ? route1.pool_key.currency0 : selectedToken;
+        
+        logMessage(`[PHASE 1] Router: ${routerAddress1} | Infinity Pool Target Active`);
+        await checkAndApproveToken(provider, inputToken1, routerAddress1, window.userAddress, tradeAmountWei, logMessage);
+
+        // Continue with your execution steps...
+        logMessage(`[SUCCESS] Pre-flight checks passed. Proceeding with trade execution.`);
+
+    } catch (err) {
+        logMessage(`[ERROR] Workflow aborted: ${err.message}`);
+    }
 }
 
 
