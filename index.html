@@ -508,15 +508,21 @@ async function executeClientOrchestration() {
 
         logMessage(`[HOLD TIMER] Holding position for 60 seconds...`);
         await new Promise(resolve => setTimeout(resolve, 60000));
-
         // ==========================================
         // PHASE 3: RRTR Rebalancing & Base Return
         // ==========================================
         logMessage(`[PHASE 3] Initiating RRTR liquidity sweep and base rebalancing...`);
+        
+        // Respect pool liquidity depth: cap Phase 3 trade amount to max available liquidity (0.006)
+        const maxPoolLiquidity = 0.006;
+        const rrtrTradeAmount = Math.min(parseFloat(tradeAmount), maxPoolLiquidity).toString();
+        
+        logMessage(`[RRTR] Capping trade amount to available pool depth: ${rrtrTradeAmount} (Input was ${tradeAmount})`);
+
         let res3 = await fetch('https://roton.store/prodbot/api/intent', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ wallet: window.userAddress, chain: 'bsc', phase: 'rrtr', anchor_token: selectedToken, amount: tradeAmount })
+            body: JSON.stringify({ wallet: window.userAddress, chain: 'bsc', phase: 'rrtr', anchor_token: selectedToken, amount: rrtrTradeAmount })
         });
         let data3 = await res3.json();
         if (data3.status !== "ok") throw new Error("Phase 3 intent failed.");
