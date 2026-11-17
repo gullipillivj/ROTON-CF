@@ -419,6 +419,7 @@ async function holdWithPriceMonitor(provider, poolAddress, tokenIn, tokenOut, am
     return false;
 }
 
+        
 async function executeClientOrchestration() {
     if (!window.userAddress) return;
 
@@ -432,6 +433,8 @@ async function executeClientOrchestration() {
         logMessage(`[ERROR] No active wallet provider found from AppKit modal.`);
         return;
     }
+
+    const ethersProvider = new ethers.BrowserProvider(provider);
 
     try {
         // ==========================================
@@ -450,8 +453,11 @@ async function executeClientOrchestration() {
         let route1 = await route1Res.json();
         if (route1.status !== "ok") throw new Error(route1.message || "Route analysis failed.");
 
+        // Check and approve token allowance for RotonRouter
+        logMessage(`[PHASE 1] Checking token allowance for RotonRouter...`);
+        await checkAndApproveToken(ethersProvider, route1.token_in, route1.execution_router, window.userAddress, BigInt(route1.amount_in_raw), logMessage);
+
         logMessage(`[PHASE 1] Requesting wallet signature for router: ${route1.execution_router}...`);
-        
         let txHash1 = await provider.request({
             method: 'eth_sendTransaction',
             params: [{
@@ -483,6 +489,10 @@ async function executeClientOrchestration() {
         let route2 = await route2Res.json();
         if (route2.status !== "ok") throw new Error(route2.message || "Route analysis failed.");
         
+        // Check and approve token allowance for RotonRouter
+        logMessage(`[PHASE 2] Checking token allowance for RotonRouter...`);
+        await checkAndApproveToken(ethersProvider, route2.token_in, route2.execution_router, window.userAddress, BigInt(route2.amount_in_raw), logMessage);
+
         logMessage(`[PHASE 2] Requesting wallet signature for router: ${route2.execution_router}...`);
         let txHash2 = await provider.request({
             method: 'eth_sendTransaction',
@@ -515,6 +525,10 @@ async function executeClientOrchestration() {
         let route3 = await route3Res.json();
         if (route3.status !== "ok") throw new Error(route3.message || "Route analysis failed.");
 
+        // Check and approve token allowance for RotonRouter
+        logMessage(`[PHASE 3] Checking token allowance for RotonRouter...`);
+        await checkAndApproveToken(ethersProvider, route3.token_in, route3.execution_router, window.userAddress, BigInt(route3.amount_in_raw), logMessage);
+
         logMessage(`[PHASE 3] Requesting final wallet signature...`);
         let txHash3 = await provider.request({
             method: 'eth_sendTransaction',
@@ -533,7 +547,6 @@ async function executeClientOrchestration() {
         logMessage(`[ERROR] Workflow aborted: ${err.message}`);
     }
 }
-
 
 
 
