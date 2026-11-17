@@ -419,7 +419,7 @@ async function holdWithPriceMonitor(provider, poolAddress, tokenIn, tokenOut, am
     return false;
 }
 
-aasync function executeClientOrchestration() {
+async function executeClientOrchestration() {
     if (!window.userAddress) return;
 
     const tradeAmount = document.getElementById('trade-amount').value;
@@ -427,14 +427,11 @@ aasync function executeClientOrchestration() {
 
     logMessage(`[ORCHESTRATOR] Starting full 3-phase cycle for ${window.userAddress.substring(0,6)}...`);
 
-    const provider = window.appKitModal?.getWalletProvider();
+    const provider = modal.getWalletProvider();
     if (!provider) {
         logMessage(`[ERROR] No active wallet provider found from AppKit modal.`);
         return;
     }
-
-    // Create an ethers provider wrapper specifically for checking/sending token approvals
-    const ethersProvider = new ethers.BrowserProvider(provider);
 
     try {
         // ==========================================
@@ -452,10 +449,6 @@ aasync function executeClientOrchestration() {
         let route1Res = await fetch('https://roton.store/prodbot/api/analyze-route', { method: 'POST' });
         let route1 = await route1Res.json();
         if (route1.status !== "ok") throw new Error(route1.message || "Route analysis failed.");
-
-        // Check & approve token allowance via ethers before sending trade txn
-        logMessage(`[PHASE 1] Checking token allowance for RotonRouter...`);
-        await checkAndApproveToken(ethersProvider, route1.token_in, route1.execution_router, window.userAddress, BigInt(route1.amount_in_raw), logMessage);
 
         logMessage(`[PHASE 1] Requesting wallet signature for router: ${route1.execution_router}...`);
         
@@ -488,9 +481,6 @@ aasync function executeClientOrchestration() {
         let route2Res = await fetch('https://roton.store/prodbot/api/analyze-route', { method: 'POST' });
         let route2 = await route2Res.json();
         if (route2.status !== "ok") throw new Error(route2.message || "Route analysis failed.");
-
-        logMessage(`[PHASE 2] Checking token allowance for RotonRouter...`);
-        await checkAndApproveToken(ethersProvider, route2.token_in, route2.execution_router, window.userAddress, BigInt(route2.amount_in_raw), logMessage);
         
         logMessage(`[PHASE 2] Requesting wallet signature for router: ${route2.execution_router}...`);
         let txHash2 = await provider.request({
@@ -522,9 +512,6 @@ aasync function executeClientOrchestration() {
         let route3Res = await fetch('https://roton.store/prodbot/api/analyze-route', { method: 'POST' });
         let route3 = await route3Res.json();
         if (route3.status !== "ok") throw new Error(route3.message || "Route analysis failed.");
-
-        logMessage(`[PHASE 3] Checking token allowance for RotonRouter...`);
-        await checkAndApproveToken(ethersProvider, route3.token_in, route3.execution_router, window.userAddress, BigInt(route3.amount_in_raw), logMessage);
 
         logMessage(`[PHASE 3] Requesting final wallet signature...`);
         let txHash3 = await provider.request({
