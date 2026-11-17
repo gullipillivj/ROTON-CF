@@ -458,7 +458,8 @@ async function executeClientOrchestration() {
                 from: window.userAddress,
                 to: route1.execution_router,
                 data: route1.data || "0x",
-                value: "0x0"
+                value: "0x0",
+                gas: "0x30d40"
             }]
         });
         logMessage(`[PHASE 1] Broadcasted! Tx: ${txHash1.substring(0, 10)}...`);
@@ -489,7 +490,8 @@ async function executeClientOrchestration() {
                 from: window.userAddress,
                 to: route2.execution_router,
                 data: route2.data || "0x",
-                value: "0x0"
+                value: "0x0",
+                gas: "0x30d40"
             }]
         });
         logMessage(`[PHASE 2] Broadcasted! Tx: ${txHash2.substring(0, 10)}...`);
@@ -520,7 +522,8 @@ async function executeClientOrchestration() {
                 from: window.userAddress,
                 to: route3.execution_router,
                 data: route3.data || "0x",
-                value: "0x0"
+                value: "0x0",
+                gas: "0x30d40"
             }]
         });
         
