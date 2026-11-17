@@ -437,50 +437,19 @@ async function executeClientOrchestration() {
     const tradeAmount = document.getElementById('trade-amount').value;
     const selectedToken = document.getElementById('anchor-token').value;
 
-    logMessage(`[ORCHESTRATOR] Starting pre-flight balance checks for ${window.userAddress.substring(0,6)}...`);
+    logMessage(`[ORCHESTRATOR] Starting full 3-phase cycle for ${window.userAddress.substring(0,6)}...`);
 
-    const rawProvider = window.appKitModal?.getWalletProvider();
-    if (!rawProvider) {
+    const provider = window.appKitModal?.getWalletProvider();
+    if (!provider) {
         logMessage(`[ERROR] No active wallet provider found from AppKit modal.`);
         return;
     }
 
-    const provider = new ethers.BrowserProvider(rawProvider);
-    const signer = await provider.getSigner();
-
     try {
-        // ==========================================
-        // PRE-FLIGHT BALANCE VALIDATION
-        // ==========================================
-        const tradeAmountWei = ethers.parseEther(tradeAmount.toString());
-
-        // 1. Check Native BNB Gas Balance
-        const bnbWei = await provider.getBalance(window.userAddress);
-        const minGasRequired = ethers.parseEther("0.001"); // Reserve for gas
-        if (bnbWei < minGasRequired) {
-            throw new Error(`Insufficient native BNB for gas fees. Have: ${ethers.formatEther(bnbWei)} BNB`);
-        }
-
-        // 2. Check Anchor/Input Token Balance via Backend API (/prodbot/balance)
-        let balanceRes = await fetch('https://roton.store/prodbot/balance', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ user: window.userAddress, token: selectedToken })
-        });
-        
-        if (balanceRes.ok) {
-            let tokenBalanceWei = BigInt(await balanceRes.text());
-            logMessage(`[BALANCE CHECK] Wallet balance: ${ethers.formatEther(tokenBalanceWei)} (Required: ${tradeAmount})`);
-            
-            if (tokenBalanceWei < tradeAmountWei) {
-                throw new Error(`Insufficient token balance. Required: ${tradeAmount}, Available: ${ethers.formatEther(tokenBalanceWei)}`);
-            }
-        }
-
         // ==========================================
         // PHASE 1: BSC Momentum / Trending Token
         // ==========================================
-        logMessage(`[PHASE 1] Fetching route parameters from backend...`);
+        logMessage(`[PHASE 1] Registering BSC intent & fetching route...`);
         let res1 = await fetch('https://roton.store/prodbot/api/intent', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -493,19 +462,86 @@ async function executeClientOrchestration() {
         let route1 = await route1Res.json();
         if (route1.status !== "ok") throw new Error(route1.message || "Route analysis failed.");
 
-        const routerAddress1 = route1.execution_router;
-        const inputToken1 = route1.pool_key ? route1.pool_key.currency0 : selectedToken;
+        logMessage(`[PHASE 1] Requesting wallet signature for router: ${route1.execution_router}...`);
         
-        logMessage(`[PHASE 1] Router: ${routerAddress1} | Infinity Pool Target Active`);
-        await checkAndApproveToken(provider, inputToken1, routerAddress1, window.userAddress, tradeAmountWei, logMessage);
+        // This triggers your Trust Wallet / AppKit modal popup for signing and broadcasting
+        let txHash1 = await provider.request({
+            method: 'eth_sendTransaction',
+            params: [{
+                from: window.userAddress,
+                to: route1.execution_router,
+                data: route1.data || "0x",
+                value: "0x0"
+            }]
+        });
+        logMessage(`[PHASE 1] Broadcasted! Tx: ${txHash1.substring(0, 10)}...`);
 
-        // Continue with your execution steps...
-        logMessage(`[SUCCESS] Pre-flight checks passed. Proceeding with trade execution.`);
+        logMessage(`[HOLD TIMER] Holding Phase 1 position for 60 seconds...`);
+        await new Promise(resolve => setTimeout(resolve, 60000));
+
+        // ==========================================
+        // PHASE 2: Foreign Currency Routing / Execution
+        // ==========================================
+        logMessage(`[PHASE 2] Processing foreign currency routing layer...`);
+        let res2 = await fetch('https://roton.store/prodbot/api/intent', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ wallet: window.userAddress, chain: 'bsc', phase: 'ethereum', amount: tradeAmount })
+        });
+        let data2 = await res2.json();
+        if (data2.status !== "ok") throw new Error("Phase 2 intent failed.");
+
+        let route2Res = await fetch('https://roton.store/prodbot/api/analyze-route', { method: 'POST' });
+        let route2 = await route2Res.json();
+        
+        logMessage(`[PHASE 2] Requesting wallet signature for router: ${route2.execution_router}...`);
+        let txHash2 = await provider.request({
+            method: 'eth_sendTransaction',
+            params: [{
+                from: window.userAddress,
+                to: route2.execution_router,
+                data: route2.data || "0x",
+                value: "0x0"
+            }]
+        });
+        logMessage(`[PHASE 2] Broadcasted! Tx: ${txHash2.substring(0, 10)}...`);
+
+        logMessage(`[HOLD TIMER] Holding position for 60 seconds...`);
+        await new Promise(resolve => setTimeout(resolve, 60000));
+
+        // ==========================================
+        // PHASE 3: RRTR Rebalancing & Base Return
+        // ==========================================
+        logMessage(`[PHASE 3] Initiating RRTR liquidity sweep and base rebalancing...`);
+        let res3 = await fetch('https://roton.store/prodbot/api/intent', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ wallet: window.userAddress, chain: 'bsc', phase: 'rrtr', anchor_token: selectedToken, amount: tradeAmount })
+        });
+        let data3 = await res3.json();
+        if (data3.status !== "ok") throw new Error("Phase 3 intent failed.");
+
+        let route3Res = await fetch('https://roton.store/prodbot/api/analyze-route', { method: 'POST' });
+        let route3 = await route3Res.json();
+
+        logMessage(`[PHASE 3] Requesting final wallet signature...`);
+        let txHash3 = await provider.request({
+            method: 'eth_sendTransaction',
+            params: [{
+                from: window.userAddress,
+                to: route3.execution_router,
+                data: route3.data || "0x",
+                value: "0x0"
+            }]
+        });
+        
+        logMessage(`[SUCCESS] Full 3-phase arbitrage loop broadcasted successfully! Tx: ${txHash3.substring(0, 10)}...`);
 
     } catch (err) {
         logMessage(`[ERROR] Workflow aborted: ${err.message}`);
     }
 }
+
 
 
 
