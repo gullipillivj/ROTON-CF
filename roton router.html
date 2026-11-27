@@ -1,7 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Roton Router - Developer Portal & Testbench</title>
+
+  <!-- Polyfills required by Reown AppKit on GitHub Pages -->
+  <script>
+    window.global = window;
+    window.process = { env: { NODE_ENV: 'production' } };
+  </script>
+  <script type="module">
+    import { Buffer } from 'https://esm.sh';
+    window.Buffer = Buffer;
+  </script>
+
+  <style>
+    :root {
+      --bg: #0b0e14;
+      --card: #131722;
+      --input: #0a0d12;
+      --border: rgba(255, 255, 255, 0.12);
+      --bsc: #f0b90b;
+      --poly: #8247e5;
+      --text: #eaecef;
+      --muted: #848e9c;
+      --green: #0ecb81;
+    }
+    * { box-sizing: border-box; font-family: 'Inter', system-ui, sans-serif; }
+    body { margin: 0; background: var(--bg); color: var(--text); padding: 24px; }
+    .container { max-width: 1140px; margin: 0 auto; }
+    header {
+      display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center;
+      background: var(--card); border: 1px solid var(--border); border-radius: 16px;
+      padding: 18px 24px; margin-bottom: 24px; gap: 16px;
+    }
+    h1 { margin: 0; font-size: 1.45rem; }
+    .sub { color: var(--muted); font-size: 0.88rem; margin-top: 4px; }
+    .btn-connect {
+      background: #f0b90b; color: #000; border: none;
+      padding: 10px 18px; border-radius: 12px; font-weight: 700; cursor: pointer;
+    }
+    .widgets-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(460px, 1fr));
+      gap: 24px; margin-bottom: 24px;
+    }
+    @media (max-width: 520px) { .widgets-grid { grid-template-columns: 1fr; } }
+    .widget {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 18px; padding: 22px;
+    }
+    .widget-header {
+      display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;
+    }
+    .chain-pill {
+      padding: 5px 12px; border-radius: 999px; font-size: 0.78rem; font-weight: 700;
+    }
+    .pill-bsc { background: rgba(240, 185, 11, 0.16); color: var(--bsc); }
+    .pill-poly { background: rgba(130, 71, 229, 0.2); color: #b892ff; }
+    .field-box {
+      background: var(--input); border: 1px solid var(--border);
+      border-radius: 12px; padding: 12px 14px; margin-bottom: 12px;
+    }
+    .field-top {
+      display: flex; justify-content: space-between; font-size: 0.8rem;
+      color: var(--muted); margin-bottom: 8px;
+    }
+    .field-row { display: flex; gap: 10px; align-items: center; }
+    select, input {
+      background: #181d2a; color: var(--text); border: 1px solid var(--border);
+      border-radius: 10px; padding: 10px 12px; font-size: 0.95rem;
+    }
+    select { min-width: 150px; font-weight: 600; cursor: pointer; }
+    input { width: 100%; }
+    .router-meta {
+      font-size: 0.78rem; color: var(--muted); margin: 10px 0 14px;
+      word-break: break-all; line-height: 1.5;
+    }
+    .btn-swap {
+      width: 100%; padding: 14px; border: none; border-radius: 12px;
+      font-size: 1rem; font-weight: 700; cursor: pointer;
+    }
+    .btn-bsc { background: var(--bsc); color: #000; }
+    .btn-poly { background: var(--poly); color: #fff; }
+    .console {
+      background: #07090d; border: 1px solid var(--border); border-radius: 14px;
+      padding: 16px; font-family: monospace; font-size: 0.84rem; color: var(--green);
+      min-height: 130px; max-height: 240px; overflow-y: auto; line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div>
+      <h1>Roton Router Testbench</h1>
+      <div class="sub">Direct V2 Pool Swap Interface for BNB Smart Chain & Polygon</div>
+    </div>
+    <button class="btn-connect" id="connectBtn">Connect Wallet</button>
+  </header>
+
+  <div class="widgets-grid">
+    <!-- WIDGET 1: BNB SMART CHAIN (CHAIN ID 56) -->
+    <div class="widget">
+      <div class="widget-header">
+        <h2 style="margin:0; font-size:1.2rem;">BNB Smart Chain</h2>
+        <span class="chain-pill pill-bsc">BSC · Chain 56</span>
+      </div>
+
+      <div class="field-box">
+        <div class="field-top">
+          <span>From (Token In)</span>
+          <span id="bsc-bal-in">Wallet Balance: --</span>
+        </div>
+        <div class="field-row">
+          <select id="bsc-token-in"></select>
+          <input type="number" id="bsc-amt-in" value="0.01" step="0.001" placeholder="0.00" />
+        </div>
+      </div>
+
+      <div class="field-box">
+        <div class="field-top">
+          <span>To (Token Out)</span>
+          <span id="bsc-bal-out">Wallet Balance: --</span>
+        </div>
+        <div class="field-row">
+          <select id="bsc-token-out"></select>
+          <input type="number" id="bsc-min-out" value="1" step="1" placeholder="Min Amount Out" />
+        </div>
+      </div>
+
+      <div class="field-box">
+        <div class="field-top"><span>Pool Address (e.g. WBNB-USDT V2 LP)</span></div>
+        <input type="text" id="bsc-pool" value="0x16b9a82891338f9ba80e2d6970fdda79d1eb0dae" />
+      </div>
+
+      <div class="router-meta">
+        <strong>Router Address:</strong> 0x6c1F7E61Ce370414807e2a8Dd7a746F00dc7B56B
+      </div>
+
+      <button class="btn-swap btn-bsc" onclick="executeRotonSwap('bsc')">
+        Approve & Execute Swap Direct (BSC)
+      </button>
+    </div>
+
+    <!-- WIDGET 2: POLYGON MAINNET (CHAIN ID 137) -->
+    <div class="widget">
+      <div class="widget-header">
+        <h2 style="margin:0; font-size:1.2rem;">Polygon Mainnet</h2>
+        <span class="chain-pill pill-poly">Polygon · Chain 137</span>
+      </div>
+
+      <div class="field-box">
+        <div class="field-top">
+          <span>From (Token In)</span>
+          <span id="poly-bal-in">Wallet Balance: --</span>
+        </div>
+        <div class="field-row">
+          <select id="poly-token-in"></select>
+          <input type="number" id="poly-amt-in" value="1.0" step="0.1" placeholder="0.00" />
+        </div>
+      </div>
+
+      <div class="field-box">
+        <div class="field-top">
+          <span>To (Token Out)</span>
+          <span id="poly-bal-out">Wallet Balance: --</span>
+        </div>
+        <div class="field-row">
+          <select id="poly-token-out"></select>
+          <input type="number" id="poly-min-out" value="1" step="1" placeholder="Min Amount Out" />
+        </div>
+      </div>
+
+      <div class="field-box">
+        <div class="field-top"><span>Pool Address (e.g. WPOL-USDT V2 LP)</span></div>
+        <input type="text" id="poly-pool" value="0x6e7a5FAFcec6BB1e78bAE2A1F0B612012BF14827" />
+      </div>
+
+      <div class="router-meta">
+        <strong>Router Address:</strong> 0x7f1Aa65d88b3D62Ed5d782F7217c6FD6B036e781
+      </div>
+
+      <button class="btn-swap btn-poly" onclick="executeRotonSwap('poly')">
+        Approve & Execute Swap Direct (Polygon)
+      </button>
+    </div>
+  </div>
+
+  <div class="console" id="consoleLog">[SYSTEM] Ready for wallet connection...</div>
+</div>
 <script type="module">
   import { createAppKit } from 'https://esm.sh';
   import { EthersAdapter } from 'https://esm.sh';
-  import { bsc, polygon } from 'https://esm.sh/networks';
+  import { bsc, polygon } from 'https://esm.sh';
   import {
     BrowserProvider,
     JsonRpcProvider,
@@ -18,9 +210,9 @@
     defaultNetwork: bsc,
     projectId,
     metadata: {
-      name: 'Roton Router Portal',
-      description: 'Multi-chain V2 Direct Pool Swap',
-      url: window.location.origin,
+      name: 'Roton Router Testbench',
+      description: 'Direct V2 Pool Swap Interface',
+      url: 'https://github.io',
       icons: ['https://githubusercontent.com']
     }
   });
@@ -71,6 +263,8 @@
     el.scrollTop = el.scrollHeight;
   }
 
+  document.getElementById('connectBtn').addEventListener('click', () => modal.open());
+
   function initDropdowns(key) {
     const cfg = CHAINS[key];
     const selIn = document.getElementById(`${key}-token-in`);
@@ -109,9 +303,9 @@
         cOut.balanceOf(userAddress)
       ]);
       document.getElementById(`${key}-bal-in`).innerText =
-        `Balance: ${Number(formatUnits(balIn, tokInObj.decimals)).toFixed(4)} ${tokInObj.symbol}`;
+        `Wallet Balance: ${Number(formatUnits(balIn, tokInObj.decimals)).toFixed(4)} ${tokInObj.symbol}`;
       document.getElementById(`${key}-bal-out`).innerText =
-        `Balance: ${Number(formatUnits(balOut, tokOutObj.decimals)).toFixed(4)} ${tokOutObj.symbol}`;
+        `Wallet Balance: ${Number(formatUnits(balOut, tokOutObj.decimals)).toFixed(4)} ${tokOutObj.symbol}`;
     } catch (e) {
       log(`[${cfg.name}] Balance read error: ${e.message}`);
     }
@@ -120,6 +314,7 @@
   modal.subscribeProviders((state) => {
     const address = modal.getAddress();
     if (state['eip155'] && address) {
+      document.getElementById('connectBtn').innerText = `${address.slice(0, 6)}...${address.slice(-4)}`;
       log(`Connected via Reown: ${address}`);
       refreshBalances('bsc');
       refreshBalances('poly');
