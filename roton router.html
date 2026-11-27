@@ -1,3 +1,4 @@
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -67,7 +68,6 @@
       <div class="sub">Direct V2 Pool Swap Interface for BNB Smart Chain</div>
     </div>
     <button class="btn-connect" id="connectBtn">Connect Wallet</button>
-
   </header>
 
   <div class="card">
@@ -99,13 +99,11 @@
     <div class="console" id="consoleLog">[SYSTEM] Ready for wallet connection...</div>
   </div>
 </div>
-
-
 <script type="module">
   import { createAppKit } from 'https://esm.sh';
   import { EthersAdapter } from 'https://esm.sh';
   import { bsc, polygon } from 'https://esm.sh';
-  import { BrowserProvider } from 'https://esm.sh';
+  import { BrowserProvider, Contract, parseUnits } from 'https://esm.sh';
 
   const projectId = 'db6af3372f722385b2e4c5df24341c63';
 
@@ -115,57 +113,12 @@
     defaultNetwork: bsc,
     projectId,
     metadata: {
-      name: 'Roton Router',
-      description: 'BSC & Polygon Direct Swap',
+      name: 'Roton Router Testbench',
+      description: 'Direct V2 Pool Swap Interface',
       url: 'https://github.io',
       icons: ['https://githubusercontent.com']
     }
   });
-
-  // Expose globally for your swap functions
-  window.reownModal = modal;
-
-  window.getConnectedAddress = () => modal.getAddress() || null;
-
-  window.getConnectedSigner = async (targetHexChainId) => {
-    const walletProvider = modal.getWalletProvider();
-    if (!walletProvider || !modal.getAddress()) {
-      modal.open();
-      throw new Error('Please connect your wallet first.');
-    }
-    if (targetHexChainId) {
-      await walletProvider.request({
-        method: 'wallet_switchEthereumChain',
-        params: [{ chainId: targetHexChainId }]
-      });
-    }
-    const provider = new BrowserProvider(walletProvider);
-    return await provider.getSigner();
-  };
-
-  // Wire up the Connect Wallet button
-  const connectBtn = document.getElementById('connectBtn');
-  if (connectBtn) {
-    connectBtn.addEventListener('click', () => modal.open());
-  }
-
-  // Update button text & notify page when connected/disconnected
-  modal.subscribeAccount((account) => {
-    if (account && account.isConnected && account.address) {
-      if (connectBtn) {
-        connectBtn.innerText = `${account.address.slice(0, 6)}...${account.address.slice(-4)}`;
-      }
-      if (typeof window.onWalletConnected === 'function') {
-        window.onWalletConnected(account.address);
-      }
-    } else if (connectBtn) {
-      connectBtn.innerText = 'Connect Wallet';
-    }
-  });
-</script>
-
-
-
 
   const ERC20_ABI = [
     'function decimals() view returns (uint8)',
