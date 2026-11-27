@@ -3,13 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Roton Router - Developer Portal & Testbench</title>
+    <title>Roton Router - Multi-Chain Swap Testbench</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script type="module">
       import { createAppKit } from 'https://esm.sh/@reown/appkit';
       import { EthersAdapter } from 'https://esm.sh/@reown/appkit-adapter-ethers';
       import { mainnet, bsc, polygon } from 'https://esm.sh/@reown/appkit/networks';
-      import { BrowserProvider } from 'https://esm.sh/ethers@6.13.0';
+      import { BrowserProvider, Contract, parseUnits, formatUnits } from 'https://esm.sh/ethers@6.13.0';
 
       const projectId = 'db6af3372f722385b2e4c5df24341c63';
 
@@ -19,14 +19,86 @@
         1: mainnet
       };
 
-      const DEFAULT_ROUTERS = {
+      const ROUTERS_BY_CHAIN = {
         56: '0x6c1F7E61Ce370414807e2a8Dd7a746F00dc7B56B',
-        137: '0xa0365E4360e4Fc0Cf08597fAf5d72A384DdEf26e'
+        137: '0x7f1Aa65d88b3D62Ed5d782F7217c6FD6B036e781'
       };
 
+      // Token lists per chain (native gas marked with isNative: true)
+      const TOKENS_BY_CHAIN = {
+        56: [
+          { symbol: 'WBNB', address: '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c', decimals: 18 },
+          { symbol: 'BNB (Native)', address: 'NATIVE', decimals: 18, isNative: true, wrappedAddress: '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c' },
+          { symbol: 'USDT', address: '0x55d398326f99059fF775485246999027B3197955', decimals: 18 },
+          { symbol: 'USDC', address: '0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d', decimals: 18 },
+          { symbol: 'CAKE', address: '0x0e09fabb73bd3ade0a17ecc321fd13a19e81ce82', decimals: 18 },
+          { symbol: 'WETH (ETH)', address: '0x2170ed0880ac9a755fd29b2688956bd959f933f8', decimals: 18 },
+          { symbol: 'RRTR', address: '0x41f00afb06cce7A7F5916f4BCe88AFe3F32A22C2', decimals: 18 },
+          { symbol: 'RRTRN', address: '0xE7c921e2f78a9BCA5e959acf4517501F426BfE30', decimals: 18 },
+          { symbol: 'JPYC', address: '0xd3f65678abd59e8990a761ae9a6f6caafae54444', decimals: 18 },
+          { symbol: 'EURC / EURE', address: '0x8a972ed397bed7c0cbc84cc3efbc760bb07f80bb', decimals: 18 },
+          { symbol: 'XSGD', address: '0x7d6fa5b66d581c817293a3880629df8350bc822a', decimals: 18 },
+          { symbol: 'TGBP', address: '0x8a972ed397bed7c0cbc84cc3efbc760bb07f80bb', decimals: 18 },
+          { symbol: 'AUDD', address: '0x4cce605ed955295432958d8951d0b176c10720d5', decimals: 18 },
+          { symbol: 'AUSD', address: '0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a', decimals: 6 }
+        ],
+        137: [
+          { symbol: 'WPOL', address: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270', decimals: 18 },
+          { symbol: 'POL (Native)', address: 'NATIVE', decimals: 18, isNative: true, wrappedAddress: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270' },
+          { symbol: 'USDC', address: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359', decimals: 6 },
+          { symbol: 'USDT', address: '0xc2132D05D31c914a87C6611C10748AEb04B58e8F', decimals: 6 },
+          { symbol: 'RRTR', address: '0x41f00afb06cce7A7F5916f4BCe88AFe3F32A22C2', decimals: 18 },
+          { symbol: 'RRTRN', address: '0xE7c921e2f78a9BCA5e959acf4517501F426BfE30', decimals: 18 },
+          { symbol: 'JPYC', address: '0xE7C3D8C9a439feDe00D2600032D5dB0Be71C3c29', decimals: 18 },
+          { symbol: 'EURA', address: '0xE0B52e49357Fd4DAf2c15e02058DCE6BC0057db4', decimals: 18 },
+          { symbol: 'XSGD', address: '0xDC3326e71D45186F113a2F448984CA0e8D201995', decimals: 6 },
+          { symbol: 'TGBP', address: '0x27f6c8289550fCE67f6B50BeD1F519966aFE5287', decimals: 18 },
+          { symbol: 'AUDD', address: '0x4cce605ed955295432958d8951d0b176c10720d5', decimals: 18 },
+          { symbol: 'AUSD', address: '0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a', decimals: 6 }
+        ]
+      };
+
+      // 20-byte V2 pool presets per chain for quick testing
+      const V2_POOLS_BY_CHAIN = {
+        56: [
+          { label: 'Custom / Manual Pool Address', address: '' },
+          { label: 'AUSD - RRTR (0x91b0...f52e)', address: '0x91b072951efFdd971F7569677c3dE54F55a1f52e' },
+          { label: 'EURe - USDC (0x2BF3...519b)', address: '0x2BF35dF24f2b5A5B103A86416506d4ACA3B0519b' },
+          { label: 'USDC - RRTR (0x98f4...D07A)', address: '0x98f4980e9bA408867FE8C46831ec7D9211b6D07A' },
+          { label: 'RRTR - RRTRN (0x4444...1B64)', address: '0x4444b60b02493Bc615238ae58d366FD33a271B64' },
+          { label: 'EURA - USDC (0x82a5...1ad9)', address: '0x82a54e66c05fcd555adae593848a4257c9e51ad9' },
+          { label: 'TGBP - USDC (0xe530...ab2fc)', address: '0xe530b3f533193d00ba65d16f19fe227779fab2fc' },
+          { label: 'XSGD - USDC (0x1f60...1997)', address: '0x1f6082db7c8f4b199e17090cd5c8831a1dad1997' }
+        ],
+        137: [
+          { label: 'Custom / Manual Pool Address', address: '' },
+          { label: 'JPYC - USDC (0xF31A...9c98)', address: '0xF31AEAd34D7f7652BADc72dFeC7D6f4cB6019c98' },
+          { label: 'EURA - WPOL (0x9c62...472A)', address: '0x9c6270ea8E17aaf7BA14dc8E36f6517b9Ad9472A' },
+          { label: 'AUSD - RRTR (0x91b0...f52e)', address: '0x91b072951efFdd971F7569677c3dE54F55a1f52e' },
+          { label: 'RRTR - RRTRN (0x4444...1B64)', address: '0x4444b60b02493Bc615238ae58d366FD33a271B64' }
+        ]
+      };
+
+      const WRAPPED_NATIVE_ABI = ['function deposit() payable external'];
+      const ERC20_ABI = [
+        'function symbol() view returns (string)',
+        'function decimals() view returns (uint8)',
+        'function balanceOf(address account) view returns (uint256)',
+        'function allowance(address owner, address spender) view returns (uint256)',
+        'function approve(address spender, uint256 amount) returns (bool)'
+      ];
+      const V2_POOL_ABI = [
+        'function token0() view returns (address)',
+        'function token1() view returns (address)',
+        'function getReserves() view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast)'
+      ];
+      const ROTON_ROUTER_ABI = [
+        'function swapDirect(address poolAddress, address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOutMin) external returns (uint256 amountOut)'
+      ];
+
       const metadata = {
-        name: 'Roton Router',
-        description: 'Reown AppKit Wallet Connection & Router Testbench',
+        name: 'Roton Router Testbench',
+        description: 'Reown AppKit Wallet Connection & Multi-Chain Swap Testbench',
         url: window.location.origin,
         icons: []
       };
@@ -44,12 +116,81 @@
 
       window.appKitModal = modal;
       window.BrowserProvider = BrowserProvider;
+      window.Contract = Contract;
+      window.parseUnits = parseUnits;
+      window.formatUnits = formatUnits;
+      window.ERC20_ABI = ERC20_ABI;
+      window.V2_POOL_ABI = V2_POOL_ABI;
+      window.ROTON_ROUTER_ABI = ROTON_ROUTER_ABI;
 
-      function syncRouterForChain(chainId) {
+      let lastLoggedAccountKey = '';
+
+      window.logMessage = function (msg) {
+        const el = document.getElementById('consoleLog');
+        if (!el) return;
+        const line = document.createElement('div');
+        line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+        el.appendChild(line);
+        el.scrollTop = el.scrollHeight;
+      };
+
+      function populateChainUI(chainId) {
+        const numericChain = Number(chainId);
+        const tokens = TOKENS_BY_CHAIN[numericChain] || TOKENS_BY_CHAIN[56];
+        const pools = V2_POOLS_BY_CHAIN[numericChain] || V2_POOLS_BY_CHAIN[56];
+        const routerAddr = ROUTERS_BY_CHAIN[numericChain];
+
         const routerInput = document.getElementById('routerAddr');
-        const defaultRouter = DEFAULT_ROUTERS[Number(chainId)];
-        if (routerInput && defaultRouter) {
-          routerInput.value = defaultRouter;
+        if (routerInput && routerAddr) {
+          routerInput.value = routerAddr;
+        }
+
+        const tokenInSelect = document.getElementById('tokenInSelect');
+        const tokenOutSelect = document.getElementById('tokenOutSelect');
+        const tokenInCustom = document.getElementById('tokenInAddr');
+        const tokenOutCustom = document.getElementById('tokenOutAddr');
+
+        if (tokenInSelect && tokenOutSelect) {
+          tokenInSelect.innerHTML = '';
+          tokenOutSelect.innerHTML = '';
+
+          tokens.forEach((t, idx) => {
+            const optIn = document.createElement('option');
+            optIn.value = t.address;
+            optIn.textContent = `${t.symbol} (${t.address === 'NATIVE' ? 'Gas' : t.address.slice(0, 6) + '...' + t.address.slice(-4)})`;
+            tokenInSelect.appendChild(optIn);
+
+            const optOut = document.createElement('option');
+            optOut.value = t.address;
+            optOut.textContent = `${t.symbol} (${t.address === 'NATIVE' ? 'Gas' : t.address.slice(0, 6) + '...' + t.address.slice(-4)})`;
+            tokenOutSelect.appendChild(optOut);
+          });
+
+          tokenInSelect.selectedIndex = 0;
+          tokenOutSelect.selectedIndex = tokens.length > 2 ? 2 : 0;
+
+          if (tokenInCustom && tokens[0]) {
+            tokenInCustom.value = tokens[0].address;
+          }
+          if (tokenOutCustom && tokens[2]) {
+            tokenOutCustom.value = tokens[2].address;
+          }
+        }
+
+        const poolSelect = document.getElementById('poolPresetSelect');
+        const poolInput = document.getElementById('poolAddr');
+        if (poolSelect) {
+          poolSelect.innerHTML = '';
+          pools.forEach((p) => {
+            const opt = document.createElement('option');
+            opt.value = p.address;
+            opt.textContent = p.label;
+            poolSelect.appendChild(opt);
+          });
+          if (pools[1] && poolInput) {
+            poolSelect.value = pools[1].address;
+            poolInput.value = pools[1].address;
+          }
         }
       }
 
@@ -61,14 +202,12 @@
 
         try {
           await modal.switchNetwork(targetNetwork);
-          syncRouterForChain(chainId);
+          populateChainUI(chainId);
           if (statusEl) {
             statusEl.textContent = `Switched to ${targetNetwork.name}`;
             statusEl.className = 'text-xs font-mono text-emerald-400';
           }
-          if (typeof window.logMessage === 'function') {
-            window.logMessage(`[NET] Switched to ${targetNetwork.name} (${chainId})`);
-          }
+          window.logMessage(`[NET] Switched to ${targetNetwork.name} (${chainId})`);
         } catch (err) {
           console.error('Chain switch failed:', err);
           if (statusEl) {
@@ -79,9 +218,14 @@
       };
 
       window.addEventListener('DOMContentLoaded', () => {
+        populateChainUI(56);
+
         const connectBtn = document.getElementById('connect-wallet');
         const disconnectBtn = document.getElementById('disconnect-wallet');
         const chainSelect = document.getElementById('chain-select');
+        const tokenInSelect = document.getElementById('tokenInSelect');
+        const tokenOutSelect = document.getElementById('tokenOutSelect');
+        const poolPresetSelect = document.getElementById('poolPresetSelect');
 
         if (connectBtn) {
           connectBtn.hidden = false;
@@ -91,15 +235,32 @@
         if (disconnectBtn) {
           disconnectBtn.addEventListener('click', async () => {
             await modal.disconnect();
-            if (typeof window.logMessage === 'function') {
-              window.logMessage('[WALLET] Disconnected.');
-            }
           });
         }
 
         if (chainSelect) {
           chainSelect.addEventListener('change', (e) => {
             window.switchChain(e.target.value);
+          });
+        }
+
+        if (tokenInSelect) {
+          tokenInSelect.addEventListener('change', (e) => {
+            document.getElementById('tokenInAddr').value = e.target.value;
+          });
+        }
+
+        if (tokenOutSelect) {
+          tokenOutSelect.addEventListener('change', (e) => {
+            document.getElementById('tokenOutAddr').value = e.target.value;
+          });
+        }
+
+        if (poolPresetSelect) {
+          poolPresetSelect.addEventListener('change', (e) => {
+            if (e.target.value) {
+              document.getElementById('poolAddr').value = e.target.value;
+            }
           });
         }
       });
@@ -129,8 +290,10 @@
             addressEl.hidden = false;
           }
 
-          if (typeof window.logMessage === 'function') {
-            window.logMessage(`[WALLET] Connected successfully: ${state.address}`);
+          const accountKey = `${state.address.toLowerCase()}:${state.chainId || ''}`;
+          if (accountKey !== lastLoggedAccountKey) {
+            lastLoggedAccountKey = accountKey;
+            window.logMessage(`[WALLET] Connected: ${state.address}`);
           }
         } else {
           window.userAddress = null;
@@ -150,15 +313,22 @@
           }
 
           if (statusEl) statusEl.textContent = '';
+
+          if (lastLoggedAccountKey !== '') {
+            lastLoggedAccountKey = '';
+            window.logMessage('[WALLET] Disconnected.');
+          }
         }
       });
 
       // Keep dropdown & router synced if user switches networks inside their wallet
       modal.subscribeNetwork((networkState) => {
         const chainSelect = document.getElementById('chain-select');
-        if (chainSelect && networkState?.chainId && NETWORKS[networkState.chainId]) {
-          chainSelect.value = String(networkState.chainId);
-          syncRouterForChain(networkState.chainId);
+        if (networkState?.chainId && NETWORKS[networkState.chainId]) {
+          if (chainSelect) {
+            chainSelect.value = String(networkState.chainId);
+          }
+          populateChainUI(networkState.chainId);
         }
       });
     </script>
@@ -169,7 +339,7 @@
       <header class="flex flex-wrap items-center justify-between gap-4 bg-slate-900 border border-slate-800 rounded-2xl p-5">
         <div>
           <h1 class="text-xl font-bold text-white">Roton Router Testbench</h1>
-          <p class="text-sm text-slate-400">Direct V2 Pool Swap Interface (BSC & Polygon)</p>
+          <p class="text-sm text-slate-400">Multi-Chain Pair Tester (BSC & Polygon)</p>
           <p id="wallet-address" hidden class="text-xs font-mono text-emerald-400 mt-1"></p>
           <p id="status-msg" class="text-xs font-mono text-slate-400 mt-1"></p>
         </div>
@@ -208,10 +378,19 @@
 
       <!-- Swap Testbench Card -->
       <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
-        <h2 class="text-lg font-semibold text-white">Test <code class="text-amber-400">swapDirect</code> Execution</h2>
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <h2 class="text-lg font-semibold text-white">Test <code class="text-amber-400">swapDirect</code> Execution</h2>
+          <button
+            id="inspectPoolBtn"
+            type="button"
+            class="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-slate-700 cursor-pointer transition"
+          >
+            Inspect V2 Pool & Quote
+          </button>
+        </div>
 
         <div>
-          <label class="block text-xs text-slate-400 mb-1">Router Address (BSC: 0x6c1F...B56B | Polygon: 0xa036...f26e)</label>
+          <label class="block text-xs text-slate-400 mb-1">Router Address (Auto-set: BSC 0x6c1F...B56B | Polygon 0x7f1A...e781)</label>
           <input
             type="text"
             id="routerAddr"
@@ -220,34 +399,53 @@
           />
         </div>
 
-        <div>
-          <label class="block text-xs text-slate-400 mb-1">Pool Address (e.g. WBNB-USDT V2 LP)</label>
-          <input
-            type="text"
-            id="poolAddr"
-            value="0x16b9a82891338f9ba80e2d6970fdda79d1eb0dae"
-            class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm font-mono text-slate-100"
-          />
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">Known V2 Pool Preset</label>
+            <select
+              id="poolPresetSelect"
+              class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm font-mono text-slate-100"
+            ></select>
+          </div>
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">Pool Address (20-byte V2 Pair)</label>
+            <input
+              type="text"
+              id="poolAddr"
+              value="0x91b072951efFdd971F7569677c3dE54F55a1f52e"
+              class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm font-mono text-slate-100"
+            />
+          </div>
         </div>
 
-        <div>
-          <label class="block text-xs text-slate-400 mb-1">Token In Address</label>
-          <input
-            type="text"
-            id="tokenInAddr"
-            value="0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c"
-            class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm font-mono text-slate-100"
-          />
-        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">Token In (Chain List)</label>
+            <select
+              id="tokenInSelect"
+              class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm font-mono text-slate-100 mb-2"
+            ></select>
+            <input
+              type="text"
+              id="tokenInAddr"
+              placeholder="0x... or NATIVE"
+              class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs font-mono text-slate-300"
+            />
+          </div>
 
-        <div>
-          <label class="block text-xs text-slate-400 mb-1">Token Out Address</label>
-          <input
-            type="text"
-            id="tokenOutAddr"
-            value="0x55d398326f99059fF775485246999027B3197955"
-            class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm font-mono text-slate-100"
-          />
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">Token Out (Chain List)</label>
+            <select
+              id="tokenOutSelect"
+              class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm font-mono text-slate-100 mb-2"
+            ></select>
+            <input
+              type="text"
+              id="tokenOutAddr"
+              placeholder="0x... or NATIVE"
+              class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs font-mono text-slate-300"
+            />
+          </div>
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -262,7 +460,7 @@
             />
           </div>
           <div>
-            <label class="block text-xs text-slate-400 mb-1">Min Amount Out</label>
+            <label class="block text-xs text-slate-400 mb-1">Min Amount Out (Raw Wei, e.g. 1 for test)</label>
             <input
               type="number"
               id="minAmountOut"
@@ -273,13 +471,22 @@
           </div>
         </div>
 
-        <button
-          id="execBtn"
-          type="button"
-          class="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-3.5 rounded-xl transition cursor-pointer"
-        >
-          Approve & Execute Swap Direct
-        </button>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <button
+            id="wrapNativeBtn"
+            type="button"
+            class="w-full bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold py-3 rounded-xl transition cursor-pointer text-sm border border-slate-700"
+          >
+            Wrap Native Gas → WBNB / WPOL
+          </button>
+          <button
+            id="execBtn"
+            type="button"
+            class="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-3 rounded-xl transition cursor-pointer text-sm"
+          >
+            Approve & Execute Swap Direct
+          </button>
+        </div>
       </div>
 
       <!-- Console Log -->
@@ -287,46 +494,108 @@
         <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Console Log</h3>
         <div
           id="consoleLog"
-          class="bg-slate-950 border border-slate-800 rounded-xl p-4 font-mono text-xs text-emerald-400 min-h-[140px] max-h-[260px] overflow-y-auto space-y-1"
+          class="bg-slate-950 border border-slate-800 rounded-xl p-4 font-mono text-xs text-emerald-400 min-h-[160px] max-h-[300px] overflow-y-auto space-y-1"
         >
           <div>[SYSTEM] Ready for wallet connection...</div>
         </div>
       </div>
     </div>
 
-    <!-- Roton Router Execution Script -->
+    <!-- Roton Router Execution & Pool Inspection Script -->
     <script type="module">
-      import { Contract, parseUnits } from 'https://esm.sh/ethers@6.13.0';
+      import { Contract, parseUnits, formatUnits } from 'https://esm.sh/ethers@6.13.0';
 
-      window.logMessage = function (msg) {
-        const el = document.getElementById('consoleLog');
-        if (!el) return;
-        const line = document.createElement('div');
-        line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
-        el.appendChild(line);
-        el.scrollTop = el.scrollHeight;
-      };
-
-      const ERC20_ABI = [
-        'function decimals() view returns (uint8)',
-        'function allowance(address owner, address spender) view returns (uint256)',
-        'function approve(address spender, uint256 amount) returns (bool)'
-      ];
-
-      const ROTON_ROUTER_ABI = [
-        'function swapDirect(address pool, address tokenIn, address tokenOut, uint256 amountIn, uint256 minAmountOut) external returns (uint256)'
-      ];
-
-      document.getElementById('execBtn').addEventListener('click', async () => {
+      function getWalletContext() {
         const modal = window.appKitModal;
         const walletProvider = modal?.getWalletProvider();
         const userAddress = window.userAddress || modal?.getAddress();
-
         if (!walletProvider || !userAddress) {
           window.logMessage('[WARN] Please connect your wallet first.');
           if (modal) modal.open();
+          return null;
+        }
+        return { walletProvider, userAddress };
+      }
+
+      document.getElementById('wrapNativeBtn').addEventListener('click', async () => {
+        const ctx = getWalletContext();
+        if (!ctx) return;
+        const humanAmountIn = document.getElementById('amountIn').value.trim() || '0.01';
+
+        try {
+          const provider = new window.BrowserProvider(ctx.walletProvider);
+          const signer = await provider.getSigner();
+          const network = await provider.getNetwork();
+          const chainId = Number(network.chainId);
+
+          const wrappedAddr =
+            chainId === 137
+              ? '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270'
+              : '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c';
+
+          const wethContract = new Contract(
+            wrappedAddr,
+            ['function deposit() payable external'],
+            signer
+          );
+          const weiVal = parseUnits(humanAmountIn, 18);
+          window.logMessage(`[WRAP] Wrapping ${humanAmountIn} native gas into ${wrappedAddr}...`);
+          const tx = await wethContract.deposit({ value: weiVal });
+          window.logMessage(`[WRAP] Tx sent: ${tx.hash}`);
+          await tx.wait();
+          window.logMessage('[WRAP] Wrapped successfully.');
+        } catch (err) {
+          window.logMessage(`[ERROR] Wrap failed: ${err.shortMessage || err.message}`);
+        }
+      });
+
+      document.getElementById('inspectPoolBtn').addEventListener('click', async () => {
+        const ctx = getWalletContext();
+        if (!ctx) return;
+        const poolAddr = document.getElementById('poolAddr').value.trim();
+        const tokenInAddr = document.getElementById('tokenInAddr').value.trim();
+
+        if (!poolAddr || poolAddr.length !== 42) {
+          window.logMessage('[WARN] Enter a valid 20-byte V2 pool address (42 chars) to inspect.');
           return;
         }
+
+        try {
+          const provider = new window.BrowserProvider(ctx.walletProvider);
+          const pool = new Contract(poolAddr, window.V2_POOL_ABI, provider);
+          const [t0, t1, reserves] = await Promise.all([
+            pool.token0(),
+            pool.token1(),
+            pool.getReserves()
+          ]);
+          const c0 = new Contract(t0, ['function symbol() view returns (string)'], provider);
+          const c1 = new Contract(t1, ['function symbol() view returns (string)'], provider);
+          const [s0, s1] = await Promise.all([
+            c0.symbol().catch(() => t0.slice(0, 8)),
+            c1.symbol().catch(() => t1.slice(0, 8))
+          ]);
+
+          window.logMessage(`[POOL] token0: ${s0} (${t0}) | token1: ${s1} (${t1})`);
+          window.logMessage(`[POOL] reserves: r0=${reserves[0].toString()} | r1=${reserves[1].toString()}`);
+
+          if (tokenInAddr && tokenInAddr !== 'NATIVE') {
+            const match =
+              t0.toLowerCase() === tokenInAddr.toLowerCase() ||
+              t1.toLowerCase() === tokenInAddr.toLowerCase();
+            window.logMessage(
+              match
+                ? '[POOL] Selected Token In matches one of the pool tokens.'
+                : '[WARN] Selected Token In is NOT token0 or token1 of this pool!'
+            );
+          }
+        } catch (err) {
+          window.logMessage(`[ERROR] Pool inspection failed: ${err.shortMessage || err.message}`);
+        }
+      });
+
+      document.getElementById('execBtn').addEventListener('click', async () => {
+        const ctx = getWalletContext();
+        if (!ctx) return;
 
         const routerAddr = document.getElementById('routerAddr').value.trim();
         const poolAddr = document.getElementById('poolAddr').value.trim();
@@ -335,13 +604,27 @@
         const humanAmountIn = document.getElementById('amountIn').value.trim();
         const minAmountOut = document.getElementById('minAmountOut').value.trim() || '1';
 
+        if (tokenInAddr === 'NATIVE') {
+          window.logMessage(
+            '[WARN] Token In is NATIVE gas. Click "Wrap Native Gas" first or select WBNB / WPOL.'
+          );
+          return;
+        }
+
+        if (!poolAddr || poolAddr.length !== 42) {
+          window.logMessage(
+            '[WARN] Pool address must be a 20-byte V2 pair address (42 chars). 32-byte Pool IDs cannot be passed to swapDirect.'
+          );
+          return;
+        }
+
         try {
-          const provider = new window.BrowserProvider(walletProvider);
+          const provider = new window.BrowserProvider(ctx.walletProvider);
           const signer = await provider.getSigner();
           const network = await provider.getNetwork();
-          window.logMessage(`[NET] Connected Chain ID: ${network.chainId.toString()}`);
+          window.logMessage(`[NET] Chain ID: ${network.chainId.toString()} | Router: ${routerAddr}`);
 
-          const tokenIn = new Contract(tokenInAddr, ERC20_ABI, signer);
+          const tokenIn = new Contract(tokenInAddr, window.ERC20_ABI, signer);
           let decimals = 18;
           try {
             decimals = await tokenIn.decimals();
@@ -350,8 +633,14 @@
           }
 
           const amountInWei = parseUnits(humanAmountIn, decimals);
-          const currentAllowance = await tokenIn.allowance(userAddress, routerAddr);
+          const bal = await tokenIn.balanceOf(ctx.userAddress);
+          if (bal < amountInWei) {
+            window.logMessage(
+              `[WARN] Token In balance (${formatUnits(bal, decimals)}) is less than amountIn (${humanAmountIn}).`
+            );
+          }
 
+          const currentAllowance = await tokenIn.allowance(ctx.userAddress, routerAddr);
           if (currentAllowance < amountInWei) {
             window.logMessage(`[APPROVE] Approving ${humanAmountIn} tokens for Router ${routerAddr}...`);
             const approveTx = await tokenIn.approve(routerAddr, amountInWei);
@@ -362,7 +651,7 @@
             window.logMessage('[APPROVE] Sufficient allowance already exists.');
           }
 
-          const router = new Contract(routerAddr, ROTON_ROUTER_ABI, signer);
+          const router = new Contract(routerAddr, window.ROTON_ROUTER_ABI, signer);
           window.logMessage(`[SWAP] Calling swapDirect on pool ${poolAddr}...`);
           const swapTx = await router.swapDirect(
             poolAddr,
