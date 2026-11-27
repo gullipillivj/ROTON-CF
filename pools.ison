@@ -1,0 +1,114 @@
+{
+  "56": [
+    {
+      "pair": "WBNB/USDT",
+      "poolAddress": "0x16b9a82891338f9ba80e2d6970fdda79d1eb0dae",
+      "type": "v2",
+      "dex": "pancakeswap_v2"
+    },
+    {
+      "pair": "RRTR/RRTRN",
+      "poolAddress": "0x4444b60b02493Bc615238ae58d366FD33a271B64",
+      "type": "v2",
+      "dex": "v2"
+    },
+    {
+      "pair": "RRTR/USDT",
+      "poolAddress": "0x6a3223555f0c2d7cd79c465c7a984a78e3bbb1c64daabb56ffb0b3baf3790bb0",
+      "type": "bytes32_pool_id",
+      "dex": "pancakeswap_infinity"
+    },
+    {
+      "pair": "RRTR/USDC",
+      "poolAddress": "0xa05493fb96792e68b8317b3b1e306e0223d140143b166ae3e89ad0af06e5b05e",
+      "type": "bytes32_pool_id",
+      "dex": "pancakeswap_infinity"
+    },
+    {
+      "pair": "RRTR/WBNB",
+      "poolAddress": "0xd7eb30623259ab43dcdd5f2749fdb5c9c864c954a42288ccb5869ec8efbf649f",
+      "type": "bytes32_pool_id",
+      "dex": "pancakeswap_infinity"
+    },
+    {
+      "pair": "RRTR/BTCB",
+      "poolAddress": "0x1f0d715d8eb4389204109fe9d4743aaac6c1299885f02e0a555ebfdd0353bc15",
+      "type": "bytes32_pool_id",
+      "dex": "pancakeswap_infinity"
+    },
+    {
+      "pair": "RRTR/CAKE",
+      "poolAddress": "0x7323c830ca97607fe27b2a00a270ae89ae9e2228bb62008fd6c65cd08d41d654",
+      "type": "bytes32_pool_id",
+      "dex": "pancakeswap_infinity"
+    },
+    {
+      "pair": "RRTR/BNB",
+      "poolAddress": "0x8458c564a063865e437200adeb300dfe4b3841b0e5dac6ed808af51ed1beef95",
+      "type": "bytes32_pool_id",
+      "dex": "pancakeswap_infinity"
+    }
+  ],
+  "137": [
+    {
+      "pair": "AUSD/RRTR",
+      "poolAddress": "0x91b072951efFdd971F7569677c3dE54F55a1f52e",
+      "type": "v2",
+      "dex": "quickswap_v2"
+    },
+    {
+      "pair": "RRTR/USDC",
+      "poolAddress": "0x98f4980e9bA408867FE8C46831ec7D9211b6D07A",
+      "type": "v2",
+      "dex": "quickswap_v2"
+    },
+    {
+      "pair": "RRTR/RRTRN",
+      "poolAddress": "0x4444b60b02493Bc615238ae58d366FD33a271B64",
+      "type": "v2",
+      "dex": "quickswap_v2"
+    },
+    {
+      "pair": "EURe/USDC",
+      "poolAddress": "0x2BF35dF24f2b5A5B103A86416506d4ACA3B0519b",
+      "type": "v2",
+      "dex": "quickswap_v2"
+    },
+    {
+      "pair": "TGBP/USDC",
+      "poolAddress": "0x66b1b1e1d030d36cae831b19c07fcf79bb842abb",
+      "type": "v2",
+      "dex": "v2"
+    },
+    {
+      "pair": "XSGD/USDC",
+      "poolAddress": "0x1f6082db7c8f4b199e17090cd5c8831a1dad1997",
+      "type": "v2",
+      "dex": "v2"
+    },
+    {
+      "pair": "JPYC/USDC",
+      "poolAddress": "0xF31AEAd34D7f7652BADc72dFeC7D6f4cB6019c98",
+      "type": "v2",
+      "dex": "quickswap_v2"
+    },
+    {
+      "pair": "EURA/WPOL",
+      "poolAddress": "0x9c6270ea8E17aaf7BA14dc8E36f6517b9Ad9472A",
+      "type": "v2",
+      "dex": "quickswap_v2"
+    },
+    {
+      "pair": "JPYC/USDC (CoinGecko ID)",
+      "poolAddress": "0x4643e3152a6ea3957e087cefbba74a1c628aa643e6b8a0edfae23a5796dde012",
+      "type": "bytes32_pool_id",
+      "dex": "non_v2"
+    },
+    {
+      "pair": "EURe/USDC (CoinGecko ID)",
+      "poolAddress": "0x85bc73101215a4fb4cbfd7cc71e514212c18de68863f70e5512d4b98f8f2cb88",
+      "type": "bytes32_pool_id",
+      "dex": "non_v2"
+    }
+  ]
+}
