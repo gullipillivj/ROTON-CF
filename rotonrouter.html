@@ -28,11 +28,10 @@
       const TOKENS_BY_CHAIN = {
         56: [
           { symbol: 'WBNB', address: '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c', decimals: 18 },
-          { symbol: 'BNB (Native)', address: 'NATIVE', decimals: 18, isNative: true, wrappedAddress: '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c' },
           { symbol: 'USDT', address: '0x55d398326f99059fF775485246999027B3197955', decimals: 18 },
           { symbol: 'USDC', address: '0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d', decimals: 18 },
           { symbol: 'CAKE', address: '0x0e09fabb73bd3ade0a17ecc321fd13a19e81ce82', decimals: 18 },
-          { symbol: 'WETH (ETH)', address: '0x2170ed0880ac9a755fd29b2688956bd959f933f8', decimals: 18 },
+          { symbol: 'WETH', address: '0x2170ed0880ac9a755fd29b2688956bd959f933f8', decimals: 18 },
           { symbol: 'BTCB', address: '0x7130d2a12b9bcbfae4f2634d864a1ee1ce3ead9c', decimals: 18 },
           { symbol: 'RRTR', address: '0x41f00afb06cce7A7F5916f4BCe88AFe3F32A22C2', decimals: 18 },
           { symbol: 'RRTRN', address: '0xE7c921e2f78a9BCA5e959acf4517501F426BfE30', decimals: 18 },
@@ -45,7 +44,6 @@
         ],
         137: [
           { symbol: 'WPOL', address: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270', decimals: 18 },
-          { symbol: 'POL (Native)', address: 'NATIVE', decimals: 18, isNative: true, wrappedAddress: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270' },
           { symbol: 'USDC', address: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359', decimals: 6 },
           { symbol: 'USDT', address: '0xc2132D05D31c914a87C6611C10748AEb04B58e8F', decimals: 6 },
           { symbol: 'RRTR', address: '0x41f00afb06cce7A7F5916f4BCe88AFe3F32A22C2', decimals: 18 },
@@ -135,7 +133,6 @@
       function getTokenSymbolByAddress(chainId, addr) {
         if (!addr) return '';
         const lower = addr.toLowerCase();
-        if (lower === 'native') return chainId === 137 ? 'POL' : 'BNB';
         const list = TOKENS_BY_CHAIN[chainId] || [];
         const found = list.find((t) => t.address.toLowerCase() === lower);
         if (!found) return '';
@@ -281,7 +278,7 @@
           tokenOutSelect.innerHTML = '';
 
           tokens.forEach((t) => {
-            const label = `${t.symbol} (${t.address === 'NATIVE' ? 'Gas' : t.address.slice(0, 6) + '...' + t.address.slice(-4)})`;
+            const label = `${t.symbol} (${t.address.slice(0, 6)}...${t.address.slice(-4)})`;
             const optIn = document.createElement('option');
             optIn.value = t.address;
             optIn.textContent = label;
@@ -294,10 +291,10 @@
           });
 
           tokenInSelect.selectedIndex = 0;
-          tokenOutSelect.selectedIndex = tokens.length > 2 ? 2 : 0;
+          tokenOutSelect.selectedIndex = tokens.length > 1 ? 1 : 0;
 
           if (tokenInCustom && tokens[0]) tokenInCustom.value = tokens[0].address;
-          if (tokenOutCustom && tokens[2]) tokenOutCustom.value = tokens[2].address;
+          if (tokenOutCustom && tokens[1]) tokenOutCustom.value = tokens[1].address;
         }
 
         populatePoolDropdown(numericChain);
@@ -570,7 +567,7 @@
             <input
               type="text"
               id="tokenInAddr"
-              placeholder="0x... or NATIVE"
+              placeholder="0x..."
               class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs font-mono text-slate-300"
             />
           </div>
@@ -584,7 +581,7 @@
             <input
               type="text"
               id="tokenOutAddr"
-              placeholder="0x... or NATIVE"
+              placeholder="0x..."
               class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs font-mono text-slate-300"
             />
           </div>
@@ -627,22 +624,13 @@
           Connect wallet & select a valid V2 pool to auto-calculate expected out and 1% / 2% minAmountOut.
         </p>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <button
-            id="wrapNativeBtn"
-            type="button"
-            class="w-full bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold py-3 rounded-xl transition cursor-pointer text-sm border border-slate-700"
-          >
-            Wrap Native Gas → WBNB / WPOL
-          </button>
-          <button
-            id="execBtn"
-            type="button"
-            class="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-3 rounded-xl transition cursor-pointer text-sm"
-          >
-            Approve & Execute Swap Direct
-          </button>
-        </div>
+        <button
+          id="execBtn"
+          type="button"
+          class="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-3.5 rounded-xl transition cursor-pointer text-sm"
+        >
+          Approve & Execute Swap Direct
+        </button>
       </div>
 
       <!-- Console Log -->
@@ -677,8 +665,8 @@
         if (!poolAddr || poolAddr.length !== 42) {
           throw new Error('Pool address must be a 20-byte V2 contract address (42 chars).');
         }
-        if (!tokenInAddr || tokenInAddr === 'NATIVE' || !tokenOutAddr || tokenOutAddr === 'NATIVE') {
-          throw new Error('Select ERC-20 tokens (wrap native gas to WBNB/WPOL first).');
+        if (!tokenInAddr || !tokenOutAddr) {
+          throw new Error('Select valid ERC-20 token addresses.');
         }
         if (!humanAmountIn || Number(humanAmountIn) <= 0) {
           throw new Error('Enter a valid positive Amount In.');
@@ -779,39 +767,6 @@
         }
       };
 
-      document.getElementById('wrapNativeBtn').addEventListener('click', async () => {
-        const ctx = getWalletContext();
-        if (!ctx) return;
-        const humanAmountIn = document.getElementById('amountIn').value.trim() || '0.01';
-
-        try {
-          const provider = new window.BrowserProvider(ctx.walletProvider);
-          const signer = await provider.getSigner();
-          const network = await provider.getNetwork();
-          const chainId = Number(network.chainId);
-
-          const wrappedAddr =
-            chainId === 137
-              ? '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270'
-              : '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c';
-
-          const wethContract = new Contract(
-            wrappedAddr,
-            ['function deposit() payable external'],
-            signer
-          );
-          const weiVal = parseUnits(humanAmountIn, 18);
-          window.logMessage(`[WRAP] Wrapping ${humanAmountIn} native gas into ${wrappedAddr}...`);
-          const tx = await wethContract.deposit({ value: weiVal });
-          window.logMessage(`[WRAP] Tx sent: ${tx.hash}`);
-          await tx.wait();
-          window.logMessage('[WRAP] Wrapped successfully.');
-          await window.recalculateMinOut();
-        } catch (err) {
-          window.logMessage(`[ERROR] Wrap failed: ${err.shortMessage || err.message}`);
-        }
-      });
-
       document.getElementById('inspectPoolBtn').addEventListener('click', async () => {
         const ctx = getWalletContext();
         if (!ctx) return;
@@ -841,7 +796,7 @@
           window.logMessage(`[POOL] token0: ${s0} (${t0}) | token1: ${s1} (${t1})`);
           window.logMessage(`[POOL] reserves: r0=${reserves[0].toString()} | r1=${reserves[1].toString()}`);
 
-          if (tokenInAddr && tokenInAddr !== 'NATIVE') {
+          if (tokenInAddr) {
             const match =
               t0.toLowerCase() === tokenInAddr.toLowerCase() ||
               t1.toLowerCase() === tokenInAddr.toLowerCase();
@@ -868,13 +823,6 @@
         const tokenOutAddr = document.getElementById('tokenOutAddr').value.trim();
         const humanAmountIn = document.getElementById('amountIn').value.trim();
         const slippageVal = document.getElementById('slippagePct').value;
-
-        if (tokenInAddr === 'NATIVE') {
-          window.logMessage(
-            '[WARN] Token In is NATIVE gas. Click "Wrap Native Gas" first or select WBNB / WPOL.'
-          );
-          return;
-        }
 
         if (!poolAddr || poolAddr.length !== 42) {
           window.logMessage(
