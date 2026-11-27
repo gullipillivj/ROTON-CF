@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Roton Router - Developer Portal & Testbench</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.0/ethers.umd.min.js"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans p-6">
+    <div class="max-w-3xl mx-auto">
+        <header class="mb-8 border-b border-slate-800 pb-4 flex justify-between items-center">
+            <div>
+                <h1 class="text-2xl font-bold text-emerald-400">Roton Router Testbench</h1>
+                <p class="text-xs text-slate-400">Direct V2 Pool Swap Interface for BNB Smart Chain</p>
+            </div>
+            <button id="connect-btn" onclick="connectWallet()" class="bg-emerald-600 hover:bg-emerald-500 px-4 py-2 rounded-lg font-semibold text-sm transition">
+                Connect Wallet
+            </button>
+        </header>
+
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 mb-6">
+            <h2 class="text-lg font-medium mb-4 text-emerald-300">Test `swapDirect` Execution</h2>
+            
+            <div class="space-y-4 text-sm font-mono">
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">Router Address</label>
+                    <input type="text" id="router-addr" value="0x6c1F7E61Ce370414807e2a8Dd7a746F00dc7B56B" readonly class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-400">
+                </div>
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">Pool Address (e.g. WBNB-USDT V2 LP)</label>
+                    <input type="text" id="pool-addr" value="0x16b9a82891338f9ba80e2d6970fdda79d1eb0dae" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-100">
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs text-slate-400 mb-1">Token In Address</label>
+                        <input type="text" id="token-in" value="0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-100">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-slate-400 mb-1">Token Out Address</label>
+                        <input type="text" id="token-out" value="0x55d398326f99059fF775485246999027B3197955" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-100">
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs text-slate-400 mb-1">Amount In (Human Readable)</label>
+                        <input type="text" id="amount-in" value="0.01" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-100">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-slate-400 mb-1">Min Amount Out</label>
+                        <input type="text" id="min-out" value="1" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-100">
+                    </div>
+                </div>
+
+                <button onclick="executeSwapTest()" class="w-full bg-indigo-600 hover:bg-indigo-500 py-3 rounded-lg font-semibold text-white transition mt-4">
+                    Approve & Execute Swap Direct
+                </button>
+            </div>
+        </div>
+
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
+            <h3 class="text-sm font-medium text-slate-400 mb-2">Console Log</h3>
+            <div id="console" class="bg-slate-950 rounded-lg p-4 font-mono text-xs text-emerald-400 h-36 overflow-y-auto border border-slate-800">
+                [SYSTEM] Ready for wallet connection...
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let provider, signer, userAddress;
+        const ROUTER_ADDRESS = "0x6c1F7E61Ce370414807e2a8Dd7a746F00dc7B56B";
+        const ROUTER_ABI = [
+            "function swapDirect(address poolAddress, address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOutMin) external returns (uint256 amountOut)"
+        ];
+        const ERC20_ABI = [
+            "function approve(address spender, uint256 amount) returns (bool)",
+            "function allowance(address owner, address spender) view returns (uint256)"
+        ];
+
+        function log(msg) {
+            const box = document.getElementById('console');
+            box.innerHTML += `<div>> ${msg}</div>`;
+            box.scrollTop = box.scrollHeight;
+        }
+
+        async function connectWallet() {
+            if (!window.ethereum) {
+                alert("Please install MetaMask or Trust Wallet!");
+                return;
+            }
+            provider = new ethers.BrowserProvider(window.ethereum);
+            signer = await provider.getSigner();
+            userAddress = await signer.getAddress();
+            document.getElementById('connect-btn').innerText = userAddress.substring(0,6) + '...' + userAddress.substring(38);
+            log(`Wallet connected: ${userAddress}`);
+        }
+
+        async function executeSwapTest() {
+            if (!signer) {
+                alert("Connect wallet first!");
+                return;
+            }
+            try {
+                const poolAddress = document.getElementById('pool-addr').value;
+                const tokenIn = document.getElementById('token-in').value;
+                const tokenOut = document.getElementById('token-out').value;
+                const amountInStr = document.getElementById('amount-in').value;
+                const amountOutMin = BigInt(document.getElementById('min-out').value);
+
+                const amountInWei = ethers.parseEther(amountInStr);
+
+                log(`Checking token allowance for Roton Router...`);
+                const tokenContract = new ethers.Contract(tokenIn, ERC20_ABI, signer);
+                const allowance = await tokenContract.allowance(userAddress, ROUTER_ADDRESS);
+
+                if (allowance < amountInWei) {
+                    log(`Approving router to spend token...`);
+                    const approveTx = await tokenContract.approve(ROTON_ROUTER_ADDRESS, ethers.MaxUint256);
+                    await approveTx.wait();
+                    log(`Approval confirmed!`);
+                }
+
+                log(`Executing swapDirect on Roton Router...`);
+                const routerContract = new ethers.Contract(ROTON_ADDRESS, ROUTER_ABI, signer);
+                const tx = await routerContract.swapDirect(poolAddress, tokenIn, tokenOut, amountInWei, amountOutMin);
+                log(`Transaction broadcasted: ${tx.hash}`);
+                
+                await tx.wait();
+                log(`[SUCCESS] Swap completed successfully!`);
+            } catch (err) {
+                log(`[ERROR] ${err.message}`);
+            }
+        }
+    </script>
+</body>
+</html>
