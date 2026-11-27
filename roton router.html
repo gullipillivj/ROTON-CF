@@ -1,231 +1,236 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Roton Router - Developer Portal & Testbench</title>
-
-  <script>
-    window.global = window;
-    window.process = { env: { NODE_ENV: 'production' } };
-  </script>
-
-  <!-- Reown AppKit initialized directly in <head> -->
+  <script src="https://cdn.tailwindcss.com"></script>
   <script type="module">
-    import { createAppKit } from 'https://esm.sh';
-    import { EthersAdapter } from 'https://esm.sh';
-    import { bsc, polygon } from 'https://esm.sh';
+    import { createAppKit } from 'https://esm.sh/@reown/appkit';
+    import { EthersAdapter } from 'https://esm.sh/@reown/appkit-adapter-ethers';
+    import { bsc, polygon } from 'https://esm.sh/@reown/appkit/networks';
     import { BrowserProvider } from 'https://esm.sh';
 
     const projectId = 'db6af3372f722385b2e4c5df24341c63';
 
-    const modal = createAppKit({
-      adapters: [new EthersAdapter()],
-      networks: [bsc, polygon],
-      defaultNetwork: bsc,
-      projectId,
-      metadata: {
-        name: 'Roton Router Testbench',
-        description: 'Direct V2 Pool Swap Interface',
-        url: 'https://gullipillivj.github.io',
-        icons: ['https://githubusercontent.com']
-      }
-    });
+    const metadata = {
+      name: 'Roton Router',
+      description: 'Wallet Connection',
+      url: window.location.origin,
+      icons: []
+    };
 
-    window.reownModal = modal;
-    window.reownBrowserProvider = BrowserProvider;
-
-    window.openReownModal = () => modal.open();
-
-    modal.subscribeAccount((account) => {
-      const btn = document.getElementById('connectBtn');
-      if (account && account.isConnected && account.address) {
-        if (btn) btn.innerText = `${account.address.slice(0, 6)}...${account.address.slice(-4)}`;
-        if (typeof window.onReownConnected === 'function') {
-          window.onReownConnected(account.address);
+    try {
+      const modal = createAppKit({
+        adapters: [new EthersAdapter()],
+        networks: [bsc, polygon],
+        defaultNetwork: bsc,
+        projectId,
+        metadata,
+        features: {
+          analytics: false
         }
-      } else if (btn) {
-        btn.innerText = 'Connect Wallet';
+      });
+
+      window.reownModal = modal;
+      window.BrowserProvider = BrowserProvider;
+
+      window.addEventListener('DOMContentLoaded', () => {
+        const fallback = document.getElementById('connect-wallet');
+        if (fallback) {
+          fallback.hidden = false;
+          fallback.addEventListener('click', () => {
+            modal.open();
+          });
+        }
+      });
+
+      modal.subscribeAccount((state) => {
+        if (state.isConnected && state.address) {
+          window.userAddress = state.address;
+
+          const addrEl = document.getElementById('wallet-address');
+          if (addrEl) {
+            addrEl.textContent = `Connected: ${state.address}`;
+            addrEl.hidden = false;
+          }
+
+          const fallback = document.getElementById('connect-wallet');
+          if (fallback) {
+            fallback.textContent = state.address.substring(0, 6) + '...' + state.address.substring(38);
+            fallback.style.background = '#1e293b';
+            fallback.style.color = '#34d399';
+          }
+
+          if (typeof window.logMessage === 'function') {
+            window.logMessage(`[WALLET] Connected successfully: ${state.address}`);
+          }
+          if (typeof window.onWalletConnected === 'function') {
+            window.onWalletConnected(state.address);
+          }
+        }
+      });
+    } catch (error) {
+      console.error('AppKit initialization failed:', error);
+      const errEl = document.getElementById('wallet-error');
+      if (errEl) {
+        errEl.textContent = 'Wallet connection failed to initialize. Check the browser console.';
+      }
+    }
+  </script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen p-4 md:p-8 font-sans">
+  <div class="max-w-3xl mx-auto space-y-6">
+    <!-- Header matching your temp.html Reown button IDs -->
+    <header class="flex flex-wrap items-center justify-between gap-4 bg-slate-900 border border-slate-800 rounded-2xl p-5">
+      <div>
+        <h1 class="text-xl font-bold text-white">Roton Router Testbench</h1>
+        <p class="text-sm text-slate-400">Direct V2 Pool Swap Interface (BSC & Polygon)</p>
+        <p id="wallet-address" hidden class="text-xs font-mono text-emerald-400 mt-1"></p>
+        <p id="wallet-error" class="text-xs text-rose-400 mt-1"></p>
+      </div>
+      <button id="connect-wallet" class="bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold px-5 py-2.5 rounded-xl transition cursor-pointer">
+        Connect Wallet
+      </button>
+    </header>
+    <!-- Swap Testbench Card -->
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
+      <h2 class="text-lg font-semibold text-white">Test <code class="text-amber-400">swapDirect</code> Execution</h2>
+
+      <div>
+        <label class="block text-xs text-slate-400 mb-1">Router Address (BSC: 0x6c1F...B56B | Polygon: 0x7f1A...e781)</label>
+        <input type="text" id="routerAddr" value="0x6c1F7E61Ce370414807e2a8Dd7a746F00dc7B56B"
+          class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm font-mono text-slate-100" />
+      </div>
+
+      <div>
+        <label class="block text-xs text-slate-400 mb-1">Pool Address (e.g. WBNB-USDT V2 LP)</label>
+        <input type="text" id="poolAddr" value="0x16b9a82891338f9ba80e2d6970fdda79d1eb0dae"
+          class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm font-mono text-slate-100" />
+      </div>
+
+      <div>
+        <label class="block text-xs text-slate-400 mb-1">Token In Address</label>
+        <input type="text" id="tokenInAddr" value="0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c"
+          class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm font-mono text-slate-100" />
+      </div>
+
+      <div>
+        <label class="block text-xs text-slate-400 mb-1">Token Out Address</label>
+        <input type="text" id="tokenOutAddr" value="0x55d398326f99059fF775485246999027B3197955"
+          class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm font-mono text-slate-100" />
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Amount In (Human Readable)</label>
+          <input type="number" id="amountIn" value="0.01" step="0.001"
+            class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm font-mono text-slate-100" />
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Min Amount Out</label>
+          <input type="number" id="minAmountOut" value="1" step="1"
+            class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm font-mono text-slate-100" />
+        </div>
+      </div>
+
+      <button id="execBtn" class="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-3.5 rounded-xl transition cursor-pointer">
+        Approve & Execute Swap Direct
+      </button>
+    </div>
+
+    <!-- Console Log -->
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5">
+      <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Console Log</h3>
+      <div id="consoleLog" class="bg-slate-950 border border-slate-800 rounded-xl p-4 font-mono text-xs text-emerald-400 min-h-[140px] max-h-[260px] overflow-y-auto space-y-1">
+        <div>[SYSTEM] Ready for wallet connection...</div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { Contract, parseUnits } from 'https://esm.sh';
+
+    window.logMessage = function(msg) {
+      const el = document.getElementById('consoleLog');
+      if (!el) return;
+      const line = document.createElement('div');
+      line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+      el.appendChild(line);
+      el.scrollTop = el.scrollHeight;
+    };
+
+    const ERC20_ABI = [
+      'function decimals() view returns (uint8)',
+      'function allowance(address owner, address spender) view returns (uint256)',
+      'function approve(address spender, uint256 amount) returns (bool)'
+    ];
+
+    const ROTON_ROUTER_ABI = [
+      'function swapDirect(address pool, address tokenIn, address tokenOut, uint256 amountIn, uint256 minAmountOut) external returns (uint256)'
+    ];
+
+    document.getElementById('execBtn').addEventListener('click', async () => {
+      const modal = window.reownModal;
+      const walletProvider = modal?.getWalletProvider();
+      const userAddress = window.userAddress || modal?.getAddress();
+
+      if (!walletProvider || !userAddress) {
+        window.logMessage('[WARN] Please connect your wallet first.');
+        if (modal) modal.open();
+        return;
+      }
+
+      const routerAddr = document.getElementById('routerAddr').value.trim();
+      const poolAddr = document.getElementById('poolAddr').value.trim();
+      const tokenInAddr = document.getElementById('tokenInAddr').value.trim();
+      const tokenOutAddr = document.getElementById('tokenOutAddr').value.trim();
+      const humanAmountIn = document.getElementById('amountIn').value.trim();
+      const minAmountOut = document.getElementById('minAmountOut').value.trim() || '1';
+
+      try {
+        const provider = new window.BrowserProvider(walletProvider);
+        const signer = await provider.getSigner();
+        const network = await provider.getNetwork();
+        window.logMessage(`[NET] Connected Chain ID: ${network.chainId.toString()}`);
+
+        const tokenIn = new Contract(tokenInAddr, ERC20_ABI, signer);
+        let decimals = 18;
+        try {
+          decimals = await tokenIn.decimals();
+        } catch (_) {
+          window.logMessage('[INFO] Could not read decimals(), defaulting to 18.');
+        }
+
+        const amountInWei = parseUnits(humanAmountIn, decimals);
+        const currentAllowance = await tokenIn.allowance(userAddress, routerAddr);
+
+        if (currentAllowance < amountInWei) {
+          window.logMessage(`[APPROVE] Approving ${humanAmountIn} tokens for Router ${routerAddr}...`);
+          const approveTx = await tokenIn.approve(routerAddr, amountInWei);
+          window.logMessage(`[APPROVE] Tx sent: ${approveTx.hash}`);
+          await approveTx.wait();
+          window.logMessage('[APPROVE] Confirmed.');
+        } else {
+          window.logMessage('[APPROVE] Sufficient allowance already exists.');
+        }
+
+        const router = new Contract(routerAddr, ROTON_ROUTER_ABI, signer);
+        window.logMessage(`[SWAP] Calling swapDirect on pool ${poolAddr}...`);
+        const swapTx = await router.swapDirect(
+          poolAddr,
+          tokenInAddr,
+          tokenOutAddr,
+          amountInWei,
+          BigInt(minAmountOut)
+        );
+        window.logMessage(`[SWAP] Tx broadcast: ${swapTx.hash}`);
+        const receipt = await swapTx.wait();
+        window.logMessage(`[SUCCESS] Swap confirmed in block ${receipt.blockNumber}!`);
+      } catch (err) {
+        window.logMessage(`[ERROR] ${err.shortMessage || err.message}`);
       }
     });
   </script>
-
-  <style>
-    :root {
-      --bg: #0b0e14;
-      --card: #131722;
-      --input: #0a0d12;
-      --border: rgba(255, 255, 255, 0.12);
-      --gold: #f0b90b;
-      --text: #eaecef;
-      --muted: #848e9c;
-      --green: #0ecb81;
-    }
-    * { box-sizing: border-box; font-family: 'Inter', system-ui, sans-serif; }
-    body { margin: 0; background: var(--bg); color: var(--text); padding: 24px; }
-    .container { max-width: 680px; margin: 0 auto; }
-    header {
-      display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center;
-      background: var(--card); border: 1px solid var(--border); border-radius: 16px;
-      padding: 18px 24px; margin-bottom: 24px; gap: 16px;
-    }
-    h1 { margin: 0; font-size: 1.4rem; }
-    .sub { color: var(--muted); font-size: 0.86rem; margin-top: 4px; }
-    .btn-connect {
-      background: var(--gold); color: #000; border: none;
-      padding: 10px 18px; border-radius: 12px; font-weight: 700; cursor: pointer;
-    }
-    .card {
-      background: var(--card); border: 1px solid var(--border);
-      border-radius: 18px; padding: 24px; margin-bottom: 20px;
-    }
-    h2 { margin: 0 0 18px; font-size: 1.15rem; }
-    label {
-      display: block; font-size: 0.82rem; color: var(--muted);
-      margin: 12px 0 6px;
-    }
-    input {
-      width: 100%; background: var(--input); color: var(--text);
-      border: 1px solid var(--border); border-radius: 10px;
-      padding: 11px 14px; font-size: 0.92rem; font-family: monospace;
-    }
-    .btn-exec {
-      width: 100%; margin-top: 20px; padding: 14px; border: none; border-radius: 12px;
-      background: var(--gold); color: #000; font-size: 1rem; font-weight: 700; cursor: pointer;
-    }
-    .console {
-      background: #07090d; border: 1px solid var(--border); border-radius: 14px;
-      padding: 16px; font-family: monospace; font-size: 0.84rem; color: var(--green);
-      min-height: 140px; max-height: 260px; overflow-y: auto; line-height: 1.55;
-    }
-  </style>
-</head>
-<body>
-<div class="container">
-  <header>
-    <div>
-      <h1>Roton Router Testbench</h1>
-      <div class="sub">Direct V2 Pool Swap Interface for BNB Smart Chain</div>
-    </div>
-    <button class="btn-connect" id="connectBtn" onclick="window.openReownModal()">Connect Wallet</button>
-  </header>
-
-  <div class="card">
-    <h2>Test <code>swapDirect</code> Execution</h2>
-
-    <label for="routerAddr">Router Address</label>
-    <input type="text" id="routerAddr" value="0x6c1F7E61Ce370414807e2a8Dd7a746F00dc7B56B" />
-
-    <label for="poolAddr">Pool Address (e.g. WBNB-USDT V2 LP)</label>
-    <input type="text" id="poolAddr" value="0x16b9a82891338f9ba80e2d6970fdda79d1eb0dae" />
-
-    <label for="tokenInAddr">Token In Address</label>
-    <input type="text" id="tokenInAddr" value="0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c" />
-
-    <label for="tokenOutAddr">Token Out Address</label>
-    <input type="text" id="tokenOutAddr" value="0x55d398326f99059fF775485246999027B3197955" />
-
-    <label for="amountIn">Amount In (Human Readable)</label>
-    <input type="number" id="amountIn" value="0.01" step="0.001" />
-
-    <label for="minAmountOut">Min Amount Out</label>
-    <input type="number" id="minAmountOut" value="1" step="1" />
-
-    <button class="btn-exec" onclick="executeSwapDirect()">Approve & Execute Swap Direct</button>
-  </div>
-
-  <div class="card" style="padding:18px;">
-    <h3 style="margin:0 0 10px; font-size:0.95rem; color:var(--muted);">Console Log</h3>
-    <div class="console" id="consoleLog">[SYSTEM] Ready for wallet connection...</div>
-  </div>
-</div>
-
-<script type="module">
-  import { Contract, parseUnits } from 'https://esm.sh';
-
-  const ERC20_ABI = [
-    'function decimals() view returns (uint8)',
-    'function allowance(address owner, address spender) view returns (uint256)',
-    'function approve(address spender, uint256 amount) returns (bool)'
-  ];
-
-  const ROTON_ROUTER_ABI = [
-    'function swapDirect(address pool, address tokenIn, address tokenOut, uint256 amountIn, uint256 minAmountOut) external returns (uint256)'
-  ];
-
-  function log(msg) {
-    const el = document.getElementById('consoleLog');
-    el.innerHTML += `<br>[${new Date().toLocaleTimeString()}] ${msg}`;
-    el.scrollTop = el.scrollHeight;
-  }
-
-  window.onReownConnected = (address) => {
-    log(`[WALLET] Reown connected: ${address}`);
-  };
-
-  window.executeSwapDirect = async () => {
-    const modal = window.reownModal;
-    const BrowserProvider = window.reownBrowserProvider;
-
-    if (!modal || !modal.getWalletProvider() || !modal.getAddress()) {
-      log('[WARN] Wallet not connected. Opening Reown modal...');
-      if (modal) modal.open();
-      return;
-    }
-
-    const userAddress = modal.getAddress();
-    const walletProvider = modal.getWalletProvider();
-
-    const routerAddr = document.getElementById('routerAddr').value.trim();
-    const poolAddr = document.getElementById('poolAddr').value.trim();
-    const tokenInAddr = document.getElementById('tokenInAddr').value.trim();
-    const tokenOutAddr = document.getElementById('tokenOutAddr').value.trim();
-    const humanAmountIn = document.getElementById('amountIn').value.trim();
-    const minAmountOut = document.getElementById('minAmountOut').value.trim() || '1';
-
-    try {
-      const provider = new BrowserProvider(walletProvider);
-      const signer = await provider.getSigner();
-      const network = await provider.getNetwork();
-      log(`[NET] Connected Chain ID: ${network.chainId.toString()}`);
-
-      const tokenIn = new Contract(tokenInAddr, ERC20_ABI, signer);
-      let decimals = 18;
-      try {
-        decimals = await tokenIn.decimals();
-      } catch (_) {
-        log('[INFO] Could not read decimals(), defaulting to 18.');
-      }
-
-      const amountInWei = parseUnits(humanAmountIn, decimals);
-      const currentAllowance = await tokenIn.allowance(userAddress, routerAddr);
-
-      if (currentAllowance < amountInWei) {
-        log(`[APPROVE] Approving ${humanAmountIn} tokens for Router ${routerAddr}...`);
-        const approveTx = await tokenIn.approve(routerAddr, amountInWei);
-        log(`[APPROVE] Tx sent: ${approveTx.hash}`);
-        await approveTx.wait();
-        log('[APPROVE] Confirmed.');
-      } else {
-        log('[APPROVE] Sufficient allowance already exists.');
-      }
-
-      const router = new Contract(routerAddr, ROTON_ROUTER_ABI, signer);
-      log(`[SWAP] Calling swapDirect on pool ${poolAddr}...`);
-      const swapTx = await router.swapDirect(
-        poolAddr,
-        tokenInAddr,
-        tokenOutAddr,
-        amountInWei,
-        BigInt(minAmountOut)
-      );
-      log(`[SWAP] Tx broadcast: ${swapTx.hash}`);
-      const receipt = await swapTx.wait();
-      log(`[SUCCESS] Swap confirmed in block ${receipt.blockNumber}!`);
-    } catch (err) {
-      log(`[ERROR] ${err.shortMessage || err.message}`);
-    }
-  };
-</script>
 </body>
 </html>
