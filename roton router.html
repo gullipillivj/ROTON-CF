@@ -10,6 +10,46 @@
     window.process = { env: { NODE_ENV: 'production' } };
   </script>
 
+  <!-- Reown AppKit initialized directly in <head> -->
+  <script type="module">
+    import { createAppKit } from 'https://esm.sh';
+    import { EthersAdapter } from 'https://esm.sh';
+    import { bsc, polygon } from 'https://esm.sh';
+    import { BrowserProvider } from 'https://esm.sh';
+
+    const projectId = 'db6af3372f722385b2e4c5df24341c63';
+
+    const modal = createAppKit({
+      adapters: [new EthersAdapter()],
+      networks: [bsc, polygon],
+      defaultNetwork: bsc,
+      projectId,
+      metadata: {
+        name: 'Roton Router Testbench',
+        description: 'Direct V2 Pool Swap Interface',
+        url: 'https://gullipillivj.github.io',
+        icons: ['https://githubusercontent.com']
+      }
+    });
+
+    window.reownModal = modal;
+    window.reownBrowserProvider = BrowserProvider;
+
+    window.openReownModal = () => modal.open();
+
+    modal.subscribeAccount((account) => {
+      const btn = document.getElementById('connectBtn');
+      if (account && account.isConnected && account.address) {
+        if (btn) btn.innerText = `${account.address.slice(0, 6)}...${account.address.slice(-4)}`;
+        if (typeof window.onReownConnected === 'function') {
+          window.onReownConnected(account.address);
+        }
+      } else if (btn) {
+        btn.innerText = 'Connect Wallet';
+      }
+    });
+  </script>
+
   <style>
     :root {
       --bg: #0b0e14;
@@ -67,7 +107,7 @@
       <h1>Roton Router Testbench</h1>
       <div class="sub">Direct V2 Pool Swap Interface for BNB Smart Chain</div>
     </div>
-    <button class="btn-connect" id="connectBtn">Connect Wallet</button>
+    <button class="btn-connect" id="connectBtn" onclick="window.openReownModal()">Connect Wallet</button>
   </header>
 
   <div class="card">
@@ -91,7 +131,7 @@
     <label for="minAmountOut">Min Amount Out</label>
     <input type="number" id="minAmountOut" value="1" step="1" />
 
-    <button class="btn-exec" id="execBtn">Approve & Execute Swap Direct</button>
+    <button class="btn-exec" onclick="executeSwapDirect()">Approve & Execute Swap Direct</button>
   </div>
 
   <div class="card" style="padding:18px;">
@@ -99,26 +139,9 @@
     <div class="console" id="consoleLog">[SYSTEM] Ready for wallet connection...</div>
   </div>
 </div>
+
 <script type="module">
-  import { createAppKit } from 'https://esm.sh';
-  import { EthersAdapter } from 'https://esm.sh';
-  import { bsc, polygon } from 'https://esm.sh';
-  import { BrowserProvider, Contract, parseUnits } from 'https://esm.sh';
-
-  const projectId = 'db6af3372f722385b2e4c5df24341c63';
-
-  const modal = createAppKit({
-    adapters: [new EthersAdapter()],
-    networks: [bsc, polygon],
-    defaultNetwork: bsc,
-    projectId,
-    metadata: {
-      name: 'Roton Router Testbench',
-      description: 'Direct V2 Pool Swap Interface',
-      url: 'https://github.io',
-      icons: ['https://githubusercontent.com']
-    }
-  });
+  import { Contract, parseUnits } from 'https://esm.sh';
 
   const ERC20_ABI = [
     'function decimals() view returns (uint8)',
@@ -136,30 +159,22 @@
     el.scrollTop = el.scrollHeight;
   }
 
-  const connectBtn = document.getElementById('connectBtn');
-  const execBtn = document.getElementById('execBtn');
+  window.onReownConnected = (address) => {
+    log(`[WALLET] Reown connected: ${address}`);
+  };
 
-  connectBtn.addEventListener('click', () => {
-    modal.open();
-  });
+  window.executeSwapDirect = async () => {
+    const modal = window.reownModal;
+    const BrowserProvider = window.reownBrowserProvider;
 
-  modal.subscribeAccount((account) => {
-    if (account && account.isConnected && account.address) {
-      connectBtn.innerText = `${account.address.slice(0, 6)}...${account.address.slice(-4)}`;
-      log(`[WALLET] Reown connected: ${account.address}`);
-    } else {
-      connectBtn.innerText = 'Connect Wallet';
-    }
-  });
-
-  execBtn.addEventListener('click', async () => {
-    const walletProvider = modal.getWalletProvider();
-    const userAddress = modal.getAddress();
-
-    if (!walletProvider || !userAddress) {
+    if (!modal || !modal.getWalletProvider() || !modal.getAddress()) {
       log('[WARN] Wallet not connected. Opening Reown modal...');
-      return modal.open();
+      if (modal) modal.open();
+      return;
     }
+
+    const userAddress = modal.getAddress();
+    const walletProvider = modal.getWalletProvider();
 
     const routerAddr = document.getElementById('routerAddr').value.trim();
     const poolAddr = document.getElementById('poolAddr').value.trim();
@@ -210,7 +225,7 @@
     } catch (err) {
       log(`[ERROR] ${err.shortMessage || err.message}`);
     }
-  });
+  };
 </script>
 </body>
 </html>
