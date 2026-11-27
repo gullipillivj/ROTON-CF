@@ -25,7 +25,6 @@
         137: '0x7f1Aa65d88b3D62Ed5d782F7217c6FD6B036e781'
       };
 
-      // Token lists per chain (native gas marked with isNative: true)
       const TOKENS_BY_CHAIN = {
         56: [
           { symbol: 'WBNB', address: '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c', decimals: 18 },
@@ -60,17 +59,10 @@
         ]
       };
 
-      // Fallback mirror of pools.json in case offline/fetch fails
       const FALLBACK_POOLS_JSON = {
         56: [
           { pair: 'WBNB/USDT', poolAddress: '0x16b9a82891338f9ba80e2d6970fdda79d1eb0dae', type: 'v2', dex: 'pancakeswap_v2' },
-          { pair: 'RRTR/RRTRN', poolAddress: '0x4444b60b02493Bc615238ae58d366FD33a271B64', type: 'v2', dex: 'v2' },
-          { pair: 'RRTR/USDT', poolAddress: '0x6a3223555f0c2d7cd79c465c7a984a78e3bbb1c64daabb56ffb0b3baf3790bb0', type: 'bytes32_pool_id', dex: 'pancakeswap_infinity' },
-          { pair: 'RRTR/USDC', poolAddress: '0xa05493fb96792e68b8317b3b1e306e0223d140143b166ae3e89ad0af06e5b05e', type: 'bytes32_pool_id', dex: 'pancakeswap_infinity' },
-          { pair: 'RRTR/WBNB', poolAddress: '0xd7eb30623259ab43dcdd5f2749fdb5c9c864c954a42288ccb5869ec8efbf649f', type: 'bytes32_pool_id', dex: 'pancakeswap_infinity' },
-          { pair: 'RRTR/BTCB', poolAddress: '0x1f0d715d8eb4389204109fe9d4743aaac6c1299885f02e0a555ebfdd0353bc15', type: 'bytes32_pool_id', dex: 'pancakeswap_infinity' },
-          { pair: 'RRTR/CAKE', poolAddress: '0x7323c830ca97607fe27b2a00a270ae89ae9e2228bb62008fd6c65cd08d41d654', type: 'bytes32_pool_id', dex: 'pancakeswap_infinity' },
-          { pair: 'RRTR/BNB', poolAddress: '0x8458c564a063865e437200adeb300dfe4b3841b0e5dac6ed808af51ed1beef95', type: 'bytes32_pool_id', dex: 'pancakeswap_infinity' }
+          { pair: 'RRTR/RRTRN', poolAddress: '0x4444b60b02493Bc615238ae58d366FD33a271B64', type: 'v2', dex: 'v2' }
         ],
         137: [
           { pair: 'AUSD/RRTR', poolAddress: '0x91b072951efFdd971F7569677c3dE54F55a1f52e', type: 'v2', dex: 'quickswap_v2' },
@@ -80,9 +72,7 @@
           { pair: 'TGBP/USDC', poolAddress: '0x66b1b1e1d030d36cae831b19c07fcf79bb842abb', type: 'v2', dex: 'v2' },
           { pair: 'XSGD/USDC', poolAddress: '0x1f6082db7c8f4b199e17090cd5c8831a1dad1997', type: 'v2', dex: 'v2' },
           { pair: 'JPYC/USDC', poolAddress: '0xF31AEAd34D7f7652BADc72dFeC7D6f4cB6019c98', type: 'v2', dex: 'quickswap_v2' },
-          { pair: 'EURA/WPOL', poolAddress: '0x9c6270ea8E17aaf7BA14dc8E36f6517b9Ad9472A', type: 'v2', dex: 'quickswap_v2' },
-          { pair: 'JPYC/USDC (CoinGecko ID)', poolAddress: '0x4643e3152a6ea3957e087cefbba74a1c628aa643e6b8a0edfae23a5796dde012', type: 'bytes32_pool_id', dex: 'non_v2' },
-          { pair: 'EURe/USDC (CoinGecko ID)', poolAddress: '0x85bc73101215a4fb4cbfd7cc71e514212c18de68863f70e5512d4b98f8f2cb88', type: 'bytes32_pool_id', dex: 'non_v2' }
+          { pair: 'EURA/WPOL', poolAddress: '0x9c6270ea8E17aaf7BA14dc8E36f6517b9Ad9472A', type: 'v2', dex: 'quickswap_v2' }
         ]
       };
 
@@ -157,35 +147,54 @@
         const poolInput = document.getElementById('poolAddr');
         if (!poolSelect) return;
 
-        const entries = poolsByChain[String(chainId)] || poolsByChain[chainId] || [];
+        const rawEntries = poolsByChain[String(chainId)] || poolsByChain[chainId] || [];
+        const entries = rawEntries.filter((e) => e.poolAddress && e.poolAddress.length === 42 && e.type === 'v2');
+
         poolSelect.innerHTML = '';
 
         const customOpt = document.createElement('option');
         customOpt.value = '';
-        customOpt.textContent = 'Custom / Manual Pool Address';
+        customOpt.textContent = 'Custom / Manual 20-Byte V2 Pool Address';
         poolSelect.appendChild(customOpt);
 
         entries.forEach((entry) => {
           const opt = document.createElement('option');
-          opt.value = entry.poolAddress || '';
-          const shortAddr = entry.poolAddress
-            ? `${entry.poolAddress.slice(0, 8)}...${entry.poolAddress.slice(-6)}`
-            : 'N/A';
-          const tag = entry.type === 'v2' ? 'V2' : 'bytes32-ID';
-          opt.textContent = `${entry.pair} [${tag}] (${shortAddr})`;
+          opt.value = entry.poolAddress;
+          const shortAddr = `${entry.poolAddress.slice(0, 8)}...${entry.poolAddress.slice(-6)}`;
+          opt.textContent = `${entry.pair} [V2] (${shortAddr})`;
           poolSelect.appendChild(opt);
         });
 
-        // Default to first 20-byte V2 pool on the active chain if available
-        const firstV2 = entries.find((e) => e.poolAddress && e.poolAddress.length === 42);
-        if (firstV2 && poolInput) {
-          poolSelect.value = firstV2.poolAddress;
-          poolInput.value = firstV2.poolAddress;
+        if (entries[0] && poolInput) {
+          poolSelect.value = entries[0].poolAddress;
+          poolInput.value = entries[0].poolAddress;
         } else if (poolInput) {
           poolInput.value = '';
         }
 
         matchPoolFromSelectedTokens(false);
+      }
+
+      function pairsMatch(pairStr, symIn, symOut) {
+        if (!pairStr || !symIn || !symOut) return false;
+        const cleanPair = pairStr.split(' ')[0];
+        const parts = cleanPair.split('/').map((s) => s.trim().toUpperCase());
+        if (parts.length !== 2) return false;
+        const [a, b] = parts;
+
+        const norm = (s) => {
+          if (s === 'BNB' || s === 'WBNB') return 'BNB_GROUP';
+          if (s === 'POL' || s === 'WPOL') return 'POL_GROUP';
+          if (s === 'EURE' || s === 'EURC' || s === 'EURA') return 'EUR_GROUP';
+          return s;
+        };
+
+        const nIn = norm(symIn);
+        const nOut = norm(symOut);
+        const nA = norm(a);
+        const nB = norm(b);
+
+        return (nA === nIn && nB === nOut) || (nA === nOut && nB === nIn);
       }
 
       function matchPoolFromSelectedTokens(overwriteInput = true) {
@@ -199,37 +208,28 @@
         const symOut = getTokenSymbolByAddress(activeChainId, tokenOutAddr).toUpperCase();
         const entries = poolsByChain[String(activeChainId)] || poolsByChain[activeChainId] || [];
 
-        const matched = entries.find((entry) => {
-          const parts = (entry.pair || '').split('/')[0]
-            ? entry.pair.split(' ')[0].split('/').map((s) => s.trim().toUpperCase())
-            : [];
-          if (parts.length !== 2 || !symIn || !symOut) return false;
-          const [a, b] = parts;
-          const matchA = a === symIn || (a === 'WBNB' && symIn === 'BNB') || (a === 'BNB' && symIn === 'WBNB') || (a === 'WPOL' && symIn === 'POL') || (a === 'POL' && symIn === 'WPOL') || (a === 'EURE' && symIn === 'EURC') || (a === 'EURC' && symIn === 'EURE');
-          const matchB = b === symOut || (b === 'WBNB' && symOut === 'BNB') || (b === 'BNB' && symOut === 'WBNB') || (b === 'WPOL' && symOut === 'POL') || (b === 'POL' && symOut === 'WPOL') || (b === 'EURE' && symOut === 'EURC') || (b === 'EURC' && symOut === 'EURE');
-          const revA = a === symOut || (a === 'WBNB' && symOut === 'BNB') || (a === 'BNB' && symOut === 'WBNB') || (a === 'WPOL' && symOut === 'POL') || (a === 'POL' && symOut === 'WPOL') || (a === 'EURE' && symOut === 'EURC') || (a === 'EURC' && symOut === 'EURE');
-          const revB = b === symIn || (b === 'WBNB' && symIn === 'BNB') || (b === 'BNB' && symIn === 'WBNB') || (b === 'WPOL' && symIn === 'POL') || (b === 'POL' && symIn === 'WPOL') || (b === 'EURE' && symIn === 'EURC') || (b === 'EURC' && symIn === 'EURE');
-          return (matchA && matchB) || (revA && revB);
-        });
+        const matched = entries.find((entry) => pairsMatch(entry.pair, symIn, symOut));
 
         if (matched) {
-          if (overwriteInput && poolInput) {
-            poolInput.value = matched.poolAddress || '';
-          }
-          if (poolSelect && matched.poolAddress) {
-            poolSelect.value = matched.poolAddress;
-          }
-          if (statusEl) {
-            if (matched.poolAddress && matched.poolAddress.length === 42) {
-              statusEl.textContent = `pools.json [${activeChainId}]: ${matched.pair} (${matched.dex || matched.type}) -> 20-byte V2 pool`;
+          if (matched.poolAddress && matched.poolAddress.length === 42 && matched.type === 'v2') {
+            if (overwriteInput && poolInput) poolInput.value = matched.poolAddress;
+            if (poolSelect) poolSelect.value = matched.poolAddress;
+            if (statusEl) {
+              statusEl.textContent = `pools.json [${activeChainId}]: ${matched.pair} (${matched.dex || 'v2'}) -> ${matched.poolAddress}`;
               statusEl.className = 'text-xs font-mono text-emerald-400';
-            } else {
-              statusEl.textContent = `pools.json [${activeChainId}]: ${matched.pair} is ${matched.type} (66-char ID; not a 20-byte V2 pool for swapDirect)`;
+            }
+          } else {
+            if (overwriteInput && poolInput) poolInput.value = '';
+            if (statusEl) {
+              statusEl.textContent = `pools.json [${activeChainId}]: ${matched.pair} is ${matched.type} (not a 20-byte V2 pool for swapDirect).`;
               statusEl.className = 'text-xs font-mono text-amber-400';
             }
           }
         } else if (statusEl) {
-          statusEl.textContent = `No pair entry in pools.json [${activeChainId}] for ${symIn || 'In'}/${symOut || 'Out'}; select or paste a 20-byte V2 pool.`;
+          statusEl.textContent =
+            activeChainId === 137
+              ? `No V2 pool in pools.json [137] for ${symIn || 'In'}/${symOut || 'Out'}.`
+              : `Chain ${activeChainId}: select a 20-byte V2 pool or enter pool address manually.`;
           statusEl.className = 'text-xs font-mono text-slate-400';
         }
 
@@ -303,7 +303,6 @@
         populatePoolDropdown(numericChain);
       }
 
-      // Helper to programmatically switch chains from anywhere in your app
       window.switchChain = async (chainId) => {
         const targetNetwork = NETWORKS[Number(chainId)];
         const statusEl = document.getElementById('status-msg');
@@ -398,7 +397,6 @@
         reloadPoolsBtn.addEventListener('click', () => fetchPoolsJson(true));
       });
 
-      // Keep UI in sync with wallet connection state
       modal.subscribeAccount((state) => {
         const connectBtn = document.getElementById('connect-wallet');
         const disconnectBtn = document.getElementById('disconnect-wallet');
@@ -455,7 +453,6 @@
         }
       });
 
-      // Keep dropdown & router synced if user switches networks inside their wallet
       modal.subscribeNetwork((networkState) => {
         const chainSelect = document.getElementById('chain-select');
         if (networkState?.chainId && NETWORKS[networkState.chainId]) {
@@ -469,7 +466,7 @@
   </head>
   <body class="bg-slate-950 text-slate-100 min-h-screen p-4 md:p-8 font-sans">
     <div class="max-w-3xl mx-auto space-y-6">
-      <!-- Header with Reown Wallet Connect, Chain Switcher & Disconnect -->
+      <!-- Header -->
       <header class="flex flex-wrap items-center justify-between gap-4 bg-slate-900 border border-slate-800 rounded-2xl p-5">
         <div>
           <h1 class="text-xl font-bold text-white">Roton Router Testbench</h1>
@@ -533,7 +530,7 @@
         </div>
 
         <div>
-          <label class="block text-xs text-slate-400 mb-1">Router Address (Auto-set: BSC 0x6c1F...B56B | Polygon 0x7f1A...e781)</label>
+          <label class="block text-xs text-slate-400 mb-1">Router Address (BSC: 0x6c1F...B56B | Polygon: 0x7f1A...e781)</label>
           <input
             type="text"
             id="routerAddr"
@@ -544,7 +541,7 @@
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label class="block text-xs text-slate-400 mb-1">pools.json Pool Preset</label>
+            <label class="block text-xs text-slate-400 mb-1">pools.json V2 Pool Preset</label>
             <select
               id="poolPresetSelect"
               class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm font-mono text-slate-100"
@@ -627,7 +624,7 @@
         </div>
 
         <p id="quoteSummary" class="text-xs font-mono text-slate-400">
-          Connect wallet & select a 20-byte V2 pool to auto-calculate expected out and 1% / 2% minAmountOut.
+          Connect wallet & select a valid V2 pool to auto-calculate expected out and 1% / 2% minAmountOut.
         </p>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -687,6 +684,11 @@
           throw new Error('Enter a valid positive Amount In.');
         }
 
+        const code = await provider.getCode(poolAddr);
+        if (!code || code === '0x') {
+          throw new Error('No contract bytecode found at Pool Address on this chain.');
+        }
+
         const tokenInContract = new Contract(tokenInAddr, window.ERC20_ABI, provider);
         const tokenOutContract = new Contract(tokenOutAddr, window.ERC20_ABI, provider);
         const pool = new Contract(poolAddr, window.V2_POOL_ABI, provider);
@@ -700,7 +702,6 @@
         ]);
 
         const amountInWei = parseUnits(String(humanAmountIn), Number(decIn));
-        // 5 bps (0.05%) router fee before V2 constant-product math
         const amountToSwap = amountInWei - (amountInWei * 5n) / 10000n;
 
         const inLower = tokenInAddr.toLowerCase();
@@ -709,10 +710,10 @@
         const t1Lower = t1.toLowerCase();
 
         if (inLower !== t0Lower && inLower !== t1Lower) {
-          throw new Error('Token In does not match token0 or token1 of this V2 pool.');
+          throw new Error(`Pool token0/token1 (${t0.slice(0, 6)}... / ${t1.slice(0, 6)}...) do not include Token In.`);
         }
         if (outLower !== t0Lower && outLower !== t1Lower) {
-          throw new Error('Token Out does not match token0 or token1 of this V2 pool.');
+          throw new Error(`Pool token0/token1 (${t0.slice(0, 6)}... / ${t1.slice(0, 6)}...) do not include Token Out.`);
         }
         if (inLower === outLower) {
           throw new Error('Token In and Token Out must be different.');
@@ -721,6 +722,10 @@
         const isToken0 = inLower === t0Lower;
         const reserveIn = BigInt(isToken0 ? reserves[0] : reserves[1]);
         const reserveOut = BigInt(isToken0 ? reserves[1] : reserves[0]);
+
+        if (reserveIn === 0n || reserveOut === 0n) {
+          throw new Error('Pool has zero liquidity in one of the reserves.');
+        }
 
         const amountInWithFee = amountToSwap * 997n;
         const expectedOutWei =
@@ -770,7 +775,7 @@
           summaryEl.className = 'text-xs font-mono text-emerald-400';
         } catch (err) {
           summaryEl.textContent = `Quote info: ${err.shortMessage || err.message}`;
-          summaryEl.className = 'text-xs font-mono text-slate-400';
+          summaryEl.className = 'text-xs font-mono text-amber-400';
         }
       };
 
