@@ -290,6 +290,52 @@
         if (tokenOutAddr) tokenOutAddr.value = BSC_TOKENS[4].address;
       }
 
+      window.refreshWalletBalances = async function () {
+        const inBalEl = document.getElementById('tokenInBalLabel');
+        const outBalEl = document.getElementById('tokenOutBalLabel');
+        const nativeEl = document.getElementById('nativeBnbBalLabel');
+        const modal = window.appKitModal;
+        const walletProvider = modal?.getWalletProvider();
+        const userAddr = window.userAddress || modal?.getAddress();
+
+        if (!walletProvider || !userAddr) {
+          if (inBalEl) inBalEl.textContent = 'Bal: --';
+          if (outBalEl) outBalEl.textContent = 'Bal: --';
+          if (nativeEl) nativeEl.textContent = 'Native BNB: --';
+          return;
+        }
+
+        try {
+          const provider = new BrowserProvider(walletProvider);
+          const tokenInAddr = window.to20Byte(document.getElementById('tokenInAddr')?.value?.trim());
+          const tokenOutAddr = window.to20Byte(document.getElementById('tokenOutAddr')?.value?.trim());
+
+          const nativeWei = await provider.getBalance(userAddr);
+          const nativeFormatted = Number(formatUnits(nativeWei, 18)).toFixed(6);
+          if (nativeEl) nativeEl.textContent = `Native BNB: ${nativeFormatted} BNB`;
+
+          if (tokenInAddr && inBalEl) {
+            const cIn = new Contract(tokenInAddr, ERC20_ABI, provider);
+            const [rawIn, decIn] = await Promise.all([
+              cIn.balanceOf(userAddr),
+              cIn.decimals().catch(() => 18)
+            ]);
+            const fmtIn = Number(formatUnits(rawIn, Number(decIn))).toFixed(6);
+            inBalEl.textContent = `Bal: ${fmtIn}`;
+          }
+
+          if (tokenOutAddr && outBalEl) {
+            const cOut = new Contract(tokenOutAddr, ERC20_ABI, provider);
+            const [rawOut, decOut] = await Promise.all([
+              cOut.balanceOf(userAddr),
+              cOut.decimals().catch(() => 18)
+            ]);
+            const fmtOut = Number(formatUnits(rawOut, Number(decOut))).toFixed(6);
+            outBalEl.textContent = `Bal: ${fmtOut}`;
+          }
+        } catch (_) {}
+      };
+
       window.ensureBscNetwork = async () => {
         const statusEl = document.getElementById('status-msg');
         try {
@@ -342,19 +388,25 @@
           tokenInAddr.value = e.target.value;
           matchPoolFromSelectedTokens(true);
           window.applyUsdAmount();
+          window.refreshWalletBalances();
         });
 
         tokenOutSelect.addEventListener('change', (e) => {
           tokenOutAddr.value = e.target.value;
           matchPoolFromSelectedTokens(true);
+          window.refreshWalletBalances();
         });
 
         tokenInAddr.addEventListener('input', () => {
           matchPoolFromSelectedTokens(false);
           window.applyUsdAmount();
+          window.refreshWalletBalances();
         });
 
-        tokenOutAddr.addEventListener('input', () => matchPoolFromSelectedTokens(false));
+        tokenOutAddr.addEventListener('input', () => {
+          matchPoolFromSelectedTokens(false);
+          window.refreshWalletBalances();
+        });
 
         if (usdAmount) {
           usdAmount.addEventListener('input', () => window.applyUsdAmount());
@@ -415,6 +467,7 @@
               window.logMessage(`[WARN] Wallet is on Chain ${state.chainId}; expected BSC (56).`);
             }
             if (typeof window.recalculateMinOut === 'function') window.recalculateMinOut();
+            if (typeof window.refreshWalletBalances === 'function') window.refreshWalletBalances();
           }
         } else {
           window.userAddress = null;
@@ -544,7 +597,10 @@
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label class="block text-xs text-slate-400 mb-1">FROM Token (BSC ERC-20)</label>
+            <div class="flex items-center justify-between mb-1">
+              <label class="block text-xs text-slate-400">FROM Token (BSC ERC-20)</label>
+              <span id="tokenInBalLabel" class="text-xs font-mono text-emerald-400">Bal: --</span>
+            </div>
             <select
               id="tokenInSelect"
               class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm font-mono text-slate-100 mb-2"
@@ -555,10 +611,14 @@
               placeholder="0x..."
               class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs font-mono text-slate-300"
             />
+            <p id="nativeBnbBalLabel" class="text-[11px] font-mono text-slate-400 mt-1">Native BNB: --</p>
           </div>
 
           <div>
-            <label class="block text-xs text-slate-400 mb-1">TO Token (BSC ERC-20)</label>
+            <div class="flex items-center justify-between mb-1">
+              <label class="block text-xs text-slate-400">TO Token (BSC ERC-20)</label>
+              <span id="tokenOutBalLabel" class="text-xs font-mono text-slate-300">Bal: --</span>
+            </div>
             <select
               id="tokenOutSelect"
               class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm font-mono text-slate-100 mb-2"
@@ -946,6 +1006,7 @@
           window.logMessage(`[SWAP] Tx broadcast: ${swapTx.hash}`);
           const receipt = await swapTx.wait();
           window.logMessage(`[SUCCESS] Swap confirmed in block ${receipt.blockNumber}!`);
+          if (typeof window.refreshWalletBalances === 'function') window.refreshWalletBalances();
         } catch (err) {
           window.logMessage(`[ERROR] ${err.shortMessage || err.message}`);
         }
