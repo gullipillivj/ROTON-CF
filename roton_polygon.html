@@ -13,6 +13,7 @@
 
       const projectId = 'db6af3372f722385b2e4c5df24341c63';
       const CHAIN_ID = 137;
+      const POLYGON_HEX_CHAIN_ID = '0x89';
       const POLYGON_ROUTER_ADDRESS = '0x7f1Aa65d88b3D62Ed5d782F7217c6FD6B036e781';
       const POOLS_POLYGON_URL = 'https://gullipillivj.github.io/ROTON-CF/pools_polygon.json';
 
@@ -85,6 +86,31 @@
       window.V2_POOL_ABI = V2_POOL_ABI;
       window.ROTON_ROUTER_ABI = ROTON_ROUTER_ABI;
       window.DEFAULT_POLYGON_POOL = DEFAULT_POLYGON_POOL;
+
+      function parseChainIdValue(rawId) {
+        if (rawId === undefined || rawId === null || rawId === '') return null;
+        if (typeof rawId === 'string' && rawId.trim().startsWith('0x')) {
+          return parseInt(rawId.trim(), 16);
+        }
+        const num = Number(rawId);
+        return Number.isNaN(num) ? null : num;
+      }
+
+      window.getActualChainId = async function (provider) {
+        const walletProvider = window.appKitModal?.getWalletProvider();
+        if (walletProvider && typeof walletProvider.request === 'function') {
+          try {
+            const hexId = await walletProvider.request({ method: 'eth_chainId' });
+            const parsed = parseChainIdValue(hexId);
+            if (parsed !== null) return parsed;
+          } catch (_) {}
+        }
+        if (provider) {
+          const net = await provider.getNetwork();
+          return Number(net.chainId);
+        }
+        return null;
+      };
 
       window.to20Byte = function (addr) {
         if (!addr) return null;
@@ -306,6 +332,14 @@
 
         try {
           const provider = new BrowserProvider(walletProvider);
+          const actualChain = await window.getActualChainId(provider);
+          if (actualChain !== CHAIN_ID) {
+            if (inBalEl) inBalEl.textContent = 'Bal: (switch to 137)';
+            if (outBalEl) outBalEl.textContent = 'Bal: (switch to 137)';
+            if (nativeEl) nativeEl.textContent = `Native POL: (chain ${actualChain ?? '?'})`;
+            return;
+          }
+
           const tokenInAddr = window.to20Byte(document.getElementById('tokenInAddr')?.value?.trim());
           const tokenOutAddr = window.to20Byte(document.getElementById('tokenOutAddr')?.value?.trim());
 
@@ -335,21 +369,62 @@
         } catch (_) {}
       };
 
-      window.ensurePolygonNetwork = async () => {
+      function setNetworkUiState(chainId) {
         const statusEl = document.getElementById('status-msg');
-        try {
-          await modal.switchNetwork(polygon);
+        const switchBtn = document.getElementById('switch-polygon-btn');
+        if (chainId === CHAIN_ID) {
+          if (switchBtn) switchBtn.hidden = true;
           if (statusEl) {
-            statusEl.textContent = 'Connected to Polygon Mainnet (137)';
+            statusEl.textContent = 'Network: Polygon Mainnet (137)';
             statusEl.className = 'text-xs font-mono text-emerald-400';
           }
-        } catch (err) {
+        } else if (chainId !== null) {
+          if (switchBtn) switchBtn.hidden = false;
           if (statusEl) {
-            statusEl.textContent = `Network switch notice: ${err.shortMessage || err.message}`;
+            statusEl.textContent = `Wrong chain (${chainId}) — switch to Polygon Mainnet (137)`;
             statusEl.className = 'text-xs font-mono text-amber-400';
           }
         }
+      }
+
+      window.forceSwitchToPolygon = async function () {
+        const statusEl = document.getElementById('status-msg');
+        const walletProvider = window.appKitModal?.getWalletProvider();
+
+        try {
+          window.logMessage('[CHAIN] Requesting switch to Polygon Mainnet (137 / 0x89)...');
+          if (walletProvider && typeof walletProvider.request === 'function') {
+            await walletProvider.request({
+              method: 'wallet_switchEthereumChain',
+              params: [{ chainId: POLYGON_HEX_CHAIN_ID }]
+            });
+          } else if (window.appKitModal?.switchNetwork) {
+            await window.appKitModal.switchNetwork(polygon);
+          }
+
+          const provider = walletProvider ? new BrowserProvider(walletProvider) : null;
+          const activeChain = await window.getActualChainId(provider);
+          window.logMessage(`[CHAIN] Active provider chainId after switch request: ${activeChain}`);
+          setNetworkUiState(activeChain);
+
+          if (activeChain === CHAIN_ID) {
+            if (typeof window.refreshWalletBalances === 'function') window.refreshWalletBalances();
+            if (typeof window.recalculateMinOut === 'function') window.recalculateMinOut();
+            return true;
+          }
+          return false;
+        } catch (err) {
+          const msg = err?.shortMessage || err?.message || String(err);
+          window.logMessage(`[WARN] Switch to Polygon (137) failed: ${msg}`);
+          if (statusEl) {
+            statusEl.textContent = `Switch failed (${msg}) — try Disconnect & reconnect on Polygon`;
+            statusEl.className = 'text-xs font-mono text-amber-400';
+          }
+          return false;
+        }
       };
+
+      window.ensurePolygonNetwork = window.forceSwitchToPolygon;
 
       window.addEventListener('DOMContentLoaded', async () => {
         document.getElementById('routerAddr').value = POLYGON_ROUTER_ADDRESS;
@@ -360,6 +435,7 @@
 
         const connectBtn = document.getElementById('connect-wallet');
         const disconnectBtn = document.getElementById('disconnect-wallet');
+        const switchPolygonBtn = document.getElementById('switch-polygon-btn');
         const tokenInSelect = document.getElementById('tokenInSelect');
         const tokenOutSelect = document.getElementById('tokenOutSelect');
         const tokenInAddr = document.getElementById('tokenInAddr');
@@ -380,6 +456,12 @@
         if (disconnectBtn) {
           disconnectBtn.addEventListener('click', async () => {
             await modal.disconnect();
+          });
+        }
+
+        if (switchPolygonBtn) {
+          switchPolygonBtn.addEventListener('click', async () => {
+            await window.forceSwitchToPolygon();
           });
         }
 
@@ -437,9 +519,10 @@
         reloadPoolsBtn.addEventListener('click', () => fetchPolygonPoolsJson(true));
       });
 
-      modal.subscribeAccount((state) => {
+      modal.subscribeAccount(async (state) => {
         const connectBtn = document.getElementById('connect-wallet');
         const disconnectBtn = document.getElementById('disconnect-wallet');
+        const switchBtn = document.getElementById('switch-polygon-btn');
         const addressEl = document.getElementById('wallet-address');
         const statusEl = document.getElementById('status-msg');
 
@@ -459,12 +542,16 @@
             addressEl.hidden = false;
           }
 
-          const accountKey = `${state.address.toLowerCase()}:${state.chainId || ''}`;
+          const provider = modal.getWalletProvider() ? new BrowserProvider(modal.getWalletProvider()) : null;
+          const actualChain = (await window.getActualChainId(provider)) ?? parseChainIdValue(state.chainId);
+          setNetworkUiState(actualChain);
+
+          const accountKey = `${state.address.toLowerCase()}:${actualChain ?? ''}`;
           if (accountKey !== lastLoggedAccountKey) {
             lastLoggedAccountKey = accountKey;
             window.logMessage(`[WALLET] Connected: ${state.address}`);
-            if (state.chainId && Number(state.chainId) !== CHAIN_ID) {
-              window.logMessage(`[WARN] Wallet is on Chain ${state.chainId}; expected Polygon (137).`);
+            if (actualChain !== null && actualChain !== CHAIN_ID) {
+              window.logMessage(`[WARN] Current network is Chain ${actualChain}; please switch to Polygon (137).`);
             }
             if (typeof window.recalculateMinOut === 'function') window.recalculateMinOut();
             if (typeof window.refreshWalletBalances === 'function') window.refreshWalletBalances();
@@ -479,6 +566,7 @@
           }
 
           if (disconnectBtn) disconnectBtn.hidden = true;
+          if (switchBtn) switchBtn.hidden = true;
 
           if (addressEl) {
             addressEl.textContent = '';
@@ -495,16 +583,12 @@
       });
 
       modal.subscribeNetwork((networkState) => {
-        const statusEl = document.getElementById('status-msg');
-        if (networkState?.chainId) {
-          if (Number(networkState.chainId) === CHAIN_ID) {
-            if (statusEl) {
-              statusEl.textContent = 'Network: Polygon Mainnet (137)';
-              statusEl.className = 'text-xs font-mono text-emerald-400';
-            }
-          } else if (statusEl) {
-            statusEl.textContent = `Wrong chain (${networkState.chainId}) — switch to Polygon Mainnet (137)`;
-            statusEl.className = 'text-xs font-mono text-amber-400';
+        const parsedId = parseChainIdValue(networkState?.chainId);
+        if (parsedId !== null) {
+          setNetworkUiState(parsedId);
+          if (parsedId === CHAIN_ID) {
+            if (typeof window.refreshWalletBalances === 'function') window.refreshWalletBalances();
+            if (typeof window.recalculateMinOut === 'function') window.recalculateMinOut();
           }
         }
       });
@@ -522,6 +606,15 @@
         </div>
 
         <div class="flex flex-wrap items-center gap-2.5">
+          <button
+            id="switch-polygon-btn"
+            type="button"
+            class="px-3.5 py-2.5 rounded-xl font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/40 hover:bg-amber-500/25 cursor-pointer transition text-sm"
+            hidden
+          >
+            Switch to Polygon (137)
+          </button>
+
           <button
             id="connect-wallet"
             type="button"
@@ -837,6 +930,10 @@
 
         try {
           const provider = new window.BrowserProvider(walletProvider);
+          const actualChain = await window.getActualChainId(provider);
+          if (actualChain !== 137) {
+            return;
+          }
           const quote = await computeSlippageQuote(
             provider,
             poolAddr,
@@ -867,6 +964,13 @@
 
         try {
           const provider = new window.BrowserProvider(ctx.walletProvider);
+          const actualChain = await window.getActualChainId(provider);
+          if (actualChain !== 137) {
+            window.logMessage(`[WARN] Current network is Chain ${actualChain}; trying switch to Polygon (137)...`);
+            await window.forceSwitchToPolygon();
+            return;
+          }
+
           const pool = new Contract(poolAddr, window.V2_POOL_ABI, provider);
           const [t0, t1, reserves] = await Promise.all([
             pool.token0(),
@@ -932,14 +1036,19 @@
 
         try {
           const provider = new window.BrowserProvider(ctx.walletProvider);
-          const signer = await provider.getSigner();
-          const network = await provider.getNetwork();
-          if (Number(network.chainId) !== 137) {
-            window.logMessage(`[WARN] Current network is Chain ${network.chainId.toString()}; please switch to Polygon (137).`);
-            return;
+          let actualChain = await window.getActualChainId(provider);
+          if (actualChain !== 137) {
+            window.logMessage(`[WARN] Current network is Chain ${actualChain}; requesting switch to Polygon (137)...`);
+            const switched = await window.forceSwitchToPolygon();
+            actualChain = await window.getActualChainId(provider);
+            if (!switched || actualChain !== 137) {
+              window.logMessage(`[WARN] Still on Chain ${actualChain}; please switch to Polygon (137) before executing.`);
+              return;
+            }
           }
 
-          window.logMessage(`[NET] Chain ID: ${network.chainId.toString()} | Router: ${routerAddr}`);
+          const signer = await provider.getSigner();
+          window.logMessage(`[NET] Chain ID: ${actualChain} | Router: ${routerAddr}`);
 
           const quote = await computeSlippageQuote(
             provider,
