@@ -27,7 +27,17 @@
         { symbol: 'WPOL',  label: 'WPOL',  address: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270', decimals: 18, priceUsd: 0.0763 },
         { symbol: 'WETH',  label: 'WETH',  address: '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619', decimals: 18, priceUsd: 1679.43 },
         { symbol: 'AUDD',  label: 'AUDD',  address: '0x2d00449A5181C392e954f6224eE812a87A3C0709', decimals: 6,  priceUsd: 0.65 }
+        { symbol: 'RRTR',  label: 'RRTR',  address: '0x41f00afb06cce7A7F5916f4BCe88AFe3F32A22C2', decimals: 18,  priceUsd: 1.00 }
+        { symbol: 'RRTRN',  label: 'RRTRN',  address: '0xE7c921e2f78a9BCA5e959acf4517501F426BfE30', decimals: 18,  priceUsd: 1.00 }
       ];
+
+      window.clampDecimals = function (valStr, decimals) {
+      const num = Number(valStr);
+      if (!Number.isFinite(num) || num <= 0) return '0';
+      const dec = Math.max(0, Math.min(Number(decimals) || 6, 18));
+      return Number(num.toFixed(dec)).toString();
+      };
+
 
       const FALLBACK_POLYGON_POOLS = [
         { pair: 'XSGD/USDC', poolAddress: '0x1f6082db7c8f4b199e17090cd5c8831a1dad1997', type: 'v2', dex: 'v2' },
@@ -288,96 +298,59 @@
         }
       }
 
-      function populateTokenSelectors() {
-        const tokenInSelect = document.getElementById('tokenInSelect');
-        const tokenOutSelect = document.getElementById('tokenOutSelect');
-        const tokenInAddr = document.getElementById('tokenInAddr');
-        const tokenOutAddr = document.getElementById('tokenOutAddr');
-        if (!tokenInSelect || !tokenOutSelect) return;
 
-        tokenInSelect.innerHTML = '';
-        tokenOutSelect.innerHTML = '';
+              function populateTokenSelectors() {
+          const tokenInSelect = document.getElementById('tokenInSelect');
+          const tokenOutSelect = document.getElementById('tokenOutSelect');
+          const tokenInAddr = document.getElementById('tokenInAddr');
+          const tokenOutAddr = document.getElementById('tokenOutAddr');
+          if (!tokenInSelect || !tokenOutSelect) return;
 
-        POLYGON_TOKENS.forEach((t) => {
-          const optIn = document.createElement('option');
-          optIn.value = t.address;
-          optIn.textContent = t.label;
-          tokenInSelect.appendChild(optIn);
+          const knownSymbols = new Set(POLYGON_TOKENS.map((t) => t.symbol.toUpperCase()));
+          const extraTokens = [];
 
-          const optOut = document.createElement('option');
-          optOut.value = t.address;
-          optOut.textContent = t.label;
-          tokenOutSelect.appendChild(optOut);
-        });
+          (polygonPools || []).forEach((entry) => {
+            const parts = String(entry.pair || '').split('/');
+            parts.forEach((rawSym) => {
+              const cleanSym = rawSym.replace(/\(.*\)/g, '').trim();
+              const upper = cleanSym.toUpperCase();
+              if (!upper || knownSymbols.has(upper)) return;
+              knownSymbols.add(upper);
+              const dec = entry.decimals?.[cleanSym] ?? entry.decimals?.[upper] ?? 18;
+              extraTokens.push({
+                symbol: cleanSym,
+                label: cleanSym,
+                address: '0x0000000000000000000000000000000000000000',
+                decimals: Number(dec) || 18,
+                priceUsd: 1.0
+              });
+            });
+          });
 
-        tokenInSelect.selectedIndex = 0; // USDC
-        tokenOutSelect.selectedIndex = 1; // XSGD
-        if (tokenInAddr) tokenInAddr.value = POLYGON_TOKENS[0].address;
-        if (tokenOutAddr) tokenOutAddr.value = POLYGON_TOKENS[1].address;
-      }
+          const allTokens = [...POLYGON_TOKENS, ...extraTokens];
+          tokenInSelect.innerHTML = '';
+          tokenOutSelect.innerHTML = '';
 
-      window.refreshWalletBalances = async function () {
-        const inBalEl = document.getElementById('tokenInBalLabel');
-        const outBalEl = document.getElementById('tokenOutBalLabel');
-        const nativeUsdEl = document.getElementById('nativePolUsdLabel');
-        const modal = window.appKitModal;
-        const walletProvider = modal?.getWalletProvider();
-        const userAddr = window.userAddress || modal?.getAddress();
+          allTokens.forEach((t) => {
+            const optIn = document.createElement('option');
+            optIn.value = t.address;
+            optIn.dataset.symbol = t.symbol;
+            optIn.textContent = t.label;
+            tokenInSelect.appendChild(optIn);
 
-        if (!walletProvider || !userAddr) {
-          window.latestTokenInBalance = 0;
-          if (inBalEl) inBalEl.textContent = '$0.00';
-          if (outBalEl) outBalEl.textContent = '$0.00';
-          if (nativeUsdEl) nativeUsdEl.textContent = 'Wallet POL Value: $0.00';
-          updateBalanceHint();
-          return;
+            const optOut = document.createElement('option');
+            optOut.value = t.address;
+            optOut.dataset.symbol = t.symbol;
+            optOut.textContent = t.label;
+            tokenOutSelect.appendChild(optOut);
+          });
+
+          tokenInSelect.selectedIndex = 0;
+          tokenOutSelect.selectedIndex = 1;
+          if (tokenInAddr) tokenInAddr.value = allTokens[0].address;
+          if (tokenOutAddr) tokenOutAddr.value = allTokens[1].address;
         }
 
-        try {
-          const provider = new BrowserProvider(walletProvider);
-          const actualChain = await window.getActualChainId(provider);
-          if (actualChain !== CHAIN_ID) {
-            if (inBalEl) inBalEl.textContent = 'Switch to 137';
-            if (outBalEl) outBalEl.textContent = 'Switch to 137';
-            return;
-          }
-
-          const normUser = window.to20Byte(userAddr);
-          const tokenInAddr = window.to20Byte(document.getElementById('tokenInAddr')?.value?.trim());
-          const tokenOutAddr = window.to20Byte(document.getElementById('tokenOutAddr')?.value?.trim());
-
-          const nativeWei = await provider.getBalance(normUser);
-          const nativeQty = Number(formatUnits(nativeWei, 18));
-          if (nativeUsdEl) {
-            nativeUsdEl.textContent = `Wallet POL Value: $${(nativeQty * 0.0763).toFixed(2)}`;
-          }
-
-          if (tokenInAddr && inBalEl) {
-            const cIn = new Contract(tokenInAddr, ERC20_ABI, provider);
-            const [rawIn, decIn] = await Promise.all([
-              cIn.balanceOf(normUser),
-              cIn.decimals().catch(() => 18)
-            ]);
-            const qtyIn = Number(formatUnits(rawIn, Number(decIn)));
-            window.latestTokenInBalance = qtyIn;
-            const metaIn = getTokenMetaByAddress(tokenInAddr);
-            inBalEl.textContent = `$${(qtyIn * (metaIn?.priceUsd || 1)).toFixed(2)}`;
-          }
-
-          if (tokenOutAddr && outBalEl) {
-            const cOut = new Contract(tokenOutAddr, ERC20_ABI, provider);
-            const [rawOut, decOut] = await Promise.all([
-              cOut.balanceOf(normUser),
-              cOut.decimals().catch(() => 18)
-            ]);
-            const qtyOut = Number(formatUnits(rawOut, Number(decOut)));
-            const metaOut = getTokenMetaByAddress(tokenOutAddr);
-            outBalEl.textContent = `$${(qtyOut * (metaOut?.priceUsd || 1)).toFixed(2)}`;
-          }
-
-          updateBalanceHint();
-        } catch (_) {}
-      };
 
       function setNetworkUiState(chainId) {
         const statusEl = document.getElementById('status-msg');
