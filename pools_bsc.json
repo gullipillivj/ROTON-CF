@@ -49,6 +49,34 @@
       "poolAddress": "0x8458c564a063865e437200adeb300dfe4b3841b0e5dac6ed808af51ed1beef95",
       "type": "bytes32_pool_id",
       "dex": "pancakeswap_infinity"
+    },
+    {
+      "pair": "WBNB/USDC",
+      "poolAddress": null,
+      "needs_address": true,
+      "type": "v2",
+      "dex": "pancakeswap_v2"
+    },
+    {
+      "pair": "WBNB/CAKE",
+      "poolAddress": null,
+      "needs_address": true,
+      "type": "v2",
+      "dex": "pancakeswap_v2"
+    },
+    {
+      "pair": "WBNB/WETH",
+      "poolAddress": null,
+      "needs_address": true,
+      "type": "v2",
+      "dex": "pancakeswap_v2"
+    },
+    {
+      "pair": "WBNB/BTCB",
+      "poolAddress": null,
+      "needs_address": true,
+      "type": "v2",
+      "dex": "pancakeswap_v2"
     }
   ]
 }
