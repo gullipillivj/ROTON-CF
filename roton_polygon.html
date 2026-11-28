@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Roton Router - Polygon (137) Swap Testbench</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script type="module">
+      import { createAppKit } from 'https://esm.sh/@reown/appkit';
+      import { EthersAdapter } from 'https://esm.sh/@reown/appkit-adapter-ethers';
+      import { polygon } from 'https://esm.sh/@reown/appkit/networks';
+      import { BrowserProvider, Contract, parseUnits, formatUnits } from 'https://esm.sh/ethers@6.13.0';
+
+      const projectId = 'db6af3372f722385b2e4c5df24341c63';
+      const CHAIN_ID = 137;
+      const POLYGON_ROUTER_ADDRESS = '0x7f1Aa65d88b3D62Ed5d782F7217c6FD6B036e781';
+      const POOLS_POLYGON_URL = 'https://gullipillivj.github.io/ROTON-CF/pools_polygon.json';
+
+      const POLYGON_TOKENS = [
+        { symbol: 'USDC', address: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359', decimals: 6 },
+        { symbol: 'WPOL', address: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270', decimals: 18 },
+        { symbol: 'RRTR', address: '0x41f00afb06cce7A7F5916f4BCe88AFe3F32A22C2', decimals: 18 },
+        { symbol: 'RRTRN', address: '0xE7c921e2f78a9BCA5e959acf4517501F426BfE30', decimals: 18 },
+        { symbol: 'AUSD', address: '0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a', decimals: 6 },
+        { symbol: 'EURe', address: '0xE0B52e49357Fd4DAf2c15e02058DCE6BC0057db4', decimals: 18 },
+        { symbol: 'TGBP', address: '0x2e1b342132A6779944aa778B77b39c4750bC6E78', decimals: 18 },
+        { symbol: 'XSGD', address: '0x769434dA4A0468A74216B1D9762275638e2a6780', decimals: 6 },
+        { symbol: 'JPYC', address: '0xE7C3D8C9a439feDe00D2600032D5dB0Be71C3c29', decimals: 18 }
+      ];
+
+      const FALLBACK_POLYGON_POOLS = [
+        { pair: 'AUSD/RRTR', poolAddress: '0x91b072951efFdd971F7569677c3dE54F55a1f52e', type: 'v2', dex: 'quickswap_v2' },
+        { pair: 'RRTR/USDC', poolAddress: '0x98f4980e9bA408867FE8C46831ec7D9211b6D07A', type: 'v2', dex: 'quickswap_v2' },
+        { pair: 'RRTR/RRTRN', poolAddress: '0x4444b60b02493Bc615238ae58d366FD33a271B64', type: 'v2', dex: 'quickswap_v2' },
+        { pair: 'EURe/USDC', poolAddress: '0x2BF35dF24f2b5A5B103A86416506d4ACA3B0519b', type: 'v2', dex: 'quickswap_v2' },
+        { pair: 'TGBP/USDC', poolAddress: '0x66b1b1e1d030d36cae831b19c07fcf79bb842abb', type: 'v2', dex: 'v2' },
+        { pair: 'XSGD/USDC', poolAddress: '0x1f6082db7c8f4b199e17090cd5c8831a1dad1997', type: 'v2', dex: 'v2' },
+        { pair: 'JPYC/USDC', poolAddress: '0xF31AEAd34D7f7652BADc72dFeC7D6f4cB6019c98', type: 'v2', dex: 'quickswap_v2' },
+        { pair: 'JPYC/USDC (CoinGecko ID)', poolAddress: '0x4643e3152a6ea3957e087cefbba74a1c628aa643e6b8a0edfae23a5796dde012', type: 'bytes32_pool_id', dex: 'non_v2' },
+        { pair: 'EURe/USDC (CoinGecko ID)', poolAddress: '0x85bc73101215a4fb4cbfd7cc71e514212c18de68863f70e5512d4b98f8f2cb88', type: 'bytes32_pool_id', dex: 'non_v2' },
+        { pair: 'RRTR/WPOL', poolAddress: '0x421705c0b8b0D7383f432a4a547710E42e9e6564', type: 'v2', dex: 'quickswap_v2' },
+        { pair: 'WPOL/USDC', poolAddress: '0xb3fa2fEB8EB215562B3A98A7eECa4A79ECf37DFc', type: 'v2', dex: 'quickswap_v2' }
+      ];
+
+      const ERC20_ABI = [
+        'function symbol() view returns (string)',
+        'function decimals() view returns (uint8)',
+        'function balanceOf(address account) view returns (uint256)',
+        'function allowance(address owner, address spender) view returns (uint256)',
+        'function approve(address spender, uint256 amount) returns (bool)'
+      ];
+
+      const V2_POOL_ABI = [
+        'function token0() view returns (address)',
+        'function token1() view returns (address)',
+        'function getReserves() view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast)'
+      ];
+
+      const ROTON_ROUTER_ABI = [
+        'function swapDirect(address poolAddress, address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOutMin) external returns (uint256 amountOut)'
+      ];
+
+      let polygonPools = FALLBACK_POLYGON_POOLS;
+      let lastLoggedAccountKey = '';
+
+      const modal = createAppKit({
+        adapters: [new EthersAdapter()],
+        networks: [polygon],
+        defaultNetwork: polygon,
+        projectId,
+        metadata: {
+          name: 'Roton Router - Polygon Testbench',
+          description: 'Polygon Mainnet (137) Direct ERC-20 V2 Swap Testbench',
+          url: window.location.origin,
+          icons: []
+        },
+        features: {
+          analytics: false
+        }
+      });
+
+      window.appKitModal = modal;
+      window.BrowserProvider = BrowserProvider;
+      window.Contract = Contract;
+      window.parseUnits = parseUnits;
+      window.formatUnits = formatUnits;
+      window.ERC20_ABI = ERC20_ABI;
+      window.V2_POOL_ABI = V2_POOL_ABI;
+      window.ROTON_ROUTER_ABI = ROTON_ROUTER_ABI;
+
+      window.logMessage = function (msg) {
+        const el = document.getElementById('consoleLog');
+        if (!el) return;
+        const line = document.createElement('div');
+        line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+        el.appendChild(line);
+        el.scrollTop = el.scrollHeight;
+      };
+
+      function getTokenSymbolByAddress(addr) {
+        if (!addr) return '';
+        const lower = addr.toLowerCase();
+        const found = POLYGON_TOKENS.find((t) => t.address.toLowerCase() === lower);
+        return found ? found.symbol.toUpperCase() : '';
+      }
+
+      function populatePoolDropdown() {
+        const poolSelect = document.getElementById('poolPresetSelect');
+        const poolInput = document.getElementById('poolAddr');
+        if (!poolSelect) return;
+
+        poolSelect.innerHTML = '';
+
+        const customOpt = document.createElement('option');
+        customOpt.value = '';
+        customOpt.textContent = 'Custom / Manual Pool ID or 20-Byte V2 Address';
+        poolSelect.appendChild(customOpt);
+
+        polygonPools.forEach((entry) => {
+          if (!entry.poolAddress) return;
+          const isV2 = entry.type === 'v2' && entry.poolAddress.length === 42;
+          const opt = document.createElement('option');
+          opt.value = entry.poolAddress;
+          const shortId = `${entry.poolAddress.slice(0, 8)}...${entry.poolAddress.slice(-6)}`;
+          opt.textContent = isV2
+            ? `${entry.pair} [V2 - swapDirect] (${shortId})`
+            : `${entry.pair} [${entry.type} - ${entry.poolAddress.length} chars] (${shortId})`;
+          poolSelect.appendChild(opt);
+        });
+
+        const firstV2 = polygonPools.find((e) => e.type === 'v2' && e.poolAddress && e.poolAddress.length === 42);
+        if (firstV2 && poolInput) {
+          poolSelect.value = firstV2.poolAddress;
+          poolInput.value = firstV2.poolAddress;
+        }
+
+        matchPoolFromSelectedTokens(false);
+      }
+
+      function pairsMatch(pairStr, symIn, symOut) {
+        if (!pairStr || !symIn || !symOut) return false;
+        const basePair = pairStr.replace(/\(.*?\)/g, '').trim();
+        const parts = basePair.split('/').map((s) => s.trim().toUpperCase());
+        if (parts.length !== 2) return false;
+        const [a, b] = parts;
+
+        const norm = (s) => {
+          if (s === 'POL' || s === 'WPOL') return 'POL_GROUP';
+          if (s === 'EURC' || s === 'EURE' || s === 'EURA') return 'EUR_GROUP';
+          return s;
+        };
+
+        const nIn = norm(symIn);
+        const nOut = norm(symOut);
+        const nA = norm(a);
+        const nB = norm(b);
+
+        return (nA === nIn && nB === nOut) || (nA === nOut && nB === nIn);
+      }
+
+      function matchPoolFromSelectedTokens(overwriteInput = true) {
+        const tokenInAddr = document.getElementById('tokenInAddr').value.trim();
+        const tokenOutAddr = document.getElementById('tokenOutAddr').value.trim();
+        const poolSelect = document.getElementById('poolPresetSelect');
+        const poolInput = document.getElementById('poolAddr');
+        const statusEl = document.getElementById('poolJsonStatus');
+
+        const symIn = getTokenSymbolByAddress(tokenInAddr);
+        const symOut = getTokenSymbolByAddress(tokenOutAddr);
+
+        const matched = polygonPools.find((entry) => pairsMatch(entry.pair, symIn, symOut));
+
+        if (matched && matched.poolAddress) {
+          if (overwriteInput && poolInput) {
+            poolInput.value = matched.poolAddress;
+          }
+          if (poolSelect) {
+            poolSelect.value = matched.poolAddress;
+          }
+          if (matched.type === 'v2' && matched.poolAddress.length === 42) {
+            if (statusEl) {
+              statusEl.textContent = `pools_polygon.json: ${matched.pair} (${matched.dex || 'v2'}) -> ${matched.poolAddress} [Ready for swapDirect]`;
+              statusEl.className = 'text-xs font-mono text-emerald-400';
+            }
+          } else if (statusEl) {
+            statusEl.textContent = `pools_polygon.json: ${matched.pair} is ${matched.type} (${matched.poolAddress.length} chars, ${matched.dex || 'non-v2'}) — swapDirect requires a 42-char V2 pool address.`;
+            statusEl.className = 'text-xs font-mono text-amber-400';
+          }
+        } else if (statusEl) {
+          statusEl.textContent = `No matching pool in pools_polygon.json for ${symIn || 'Token In'}/${symOut || 'Token Out'}. Select a V2 preset or enter a 20-byte V2 pool address.`;
+          statusEl.className = 'text-xs font-mono text-slate-400';
+        }
+
+        if (typeof window.recalculateMinOut === 'function') {
+          window.recalculateMinOut();
+        }
+      }
+
+      async function fetchPolygonPoolsJson(logResult = false) {
+        const statusEl = document.getElementById('poolJsonStatus');
+        try {
+          const resp = await fetch(`${POOLS_POLYGON_URL}?t=${Date.now()}`, { cache: 'no-store' });
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+          const json = await resp.json();
+          const list = Array.isArray(json)
+            ? json
+            : Array.isArray(json?.pools)
+              ? json.pools
+              : json?.[String(CHAIN_ID)] || json?.[CHAIN_ID];
+
+          if (Array.isArray(list) && list.length > 0) {
+            polygonPools = list;
+            populatePoolDropdown();
+            if (logResult) window.logMessage('[POOLS] Loaded pools_polygon.json from GitHub.');
+          } else {
+            throw new Error('Unexpected pools_polygon.json format');
+          }
+        } catch (err) {
+          polygonPools = FALLBACK_POLYGON_POOLS;
+          populatePoolDropdown();
+          if (statusEl) {
+            statusEl.textContent = `Using fallback Polygon pools (${err.message})`;
+            statusEl.className = 'text-xs font-mono text-amber-400';
+          }
+          if (logResult) window.logMessage(`[POOLS] Fallback active (${err.message}).`);
+        }
+      }
+
+      function populateTokenSelectors() {
+        const tokenInSelect = document.getElementById('tokenInSelect');
+        const tokenOutSelect = document.getElementById('tokenOutSelect');
+        const tokenInAddr = document.getElementById('tokenInAddr');
+        const tokenOutAddr = document.getElementById('tokenOutAddr');
+
+        if (!tokenInSelect || !tokenOutSelect) return;
+
+        tokenInSelect.innerHTML = '';
+        tokenOutSelect.innerHTML = '';
+
+        POLYGON_TOKENS.forEach((t) => {
+          const label = `${t.symbol} (${t.address.slice(0, 6)}...${t.address.slice(-4)})`;
+          const optIn = document.createElement('option');
+          optIn.value = t.address;
+          optIn.textContent = label;
+          tokenInSelect.appendChild(optIn);
+
+          const optOut = document.createElement('option');
+          optOut.value = t.address;
+          optOut.textContent = label;
+          tokenOutSelect.appendChild(optOut);
+        });
+
+        tokenInSelect.selectedIndex = 1; // WPOL
+        tokenOutSelect.selectedIndex = 0; // USDC
+
+        if (tokenInAddr) tokenInAddr.value = POLYGON_TOKENS[1].address;
+        if (tokenOutAddr) tokenOutAddr.value = POLYGON_TOKENS[0].address;
+      }
+
+      window.ensurePolygonNetwork = async () => {
+        const statusEl = document.getElementById('status-msg');
+        try {
+          await modal.switchNetwork(polygon);
+          if (statusEl) {
+            statusEl.textContent = 'Connected to Polygon Mainnet (137)';
+            statusEl.className = 'text-xs font-mono text-emerald-400';
+          }
+        } catch (err) {
+          if (statusEl) {
+            statusEl.textContent = `Network switch notice: ${err.shortMessage || err.message}`;
+            statusEl.className = 'text-xs font-mono text-amber-400';
+          }
+        }
+      };
+
+      window.addEventListener('DOMContentLoaded', async () => {
+        document.getElementById('routerAddr').value = POLYGON_ROUTER_ADDRESS;
+        populateTokenSelectors();
+        populatePoolDropdown();
+        await fetchPolygonPoolsJson(false);
+
+        const connectBtn = document.getElementById('connect-wallet');
+        const disconnectBtn = document.getElementById('disconnect-wallet');
+        const tokenInSelect = document.getElementById('tokenInSelect');
+        const tokenOutSelect = document.getElementById('tokenOutSelect');
+        const tokenInAddr = document.getElementById('tokenInAddr');
+        const tokenOutAddr = document.getElementById('tokenOutAddr');
+        const poolPresetSelect = document.getElementById('poolPresetSelect');
+        const poolAddr = document.getElementById('poolAddr');
+        const amountIn = document.getElementById('amountIn');
+        const slippagePct = document.getElementById('slippagePct');
+        const reloadPoolsBtn = document.getElementById('reloadPoolsBtn');
+
+        if (connectBtn) {
+          connectBtn.hidden = false;
+          connectBtn.addEventListener('click', () => modal.open());
+        }
+
+        if (disconnectBtn) {
+          disconnectBtn.addEventListener('click', async () => {
+            await modal.disconnect();
+          });
+        }
+
+        tokenInSelect.addEventListener('change', (e) => {
+          tokenInAddr.value = e.target.value;
+          matchPoolFromSelectedTokens(true);
+        });
+
+        tokenOutSelect.addEventListener('change', (e) => {
+          tokenOutAddr.value = e.target.value;
+          matchPoolFromSelectedTokens(true);
+        });
+
+        tokenInAddr.addEventListener('input', () => matchPoolFromSelectedTokens(false));
+        tokenOutAddr.addEventListener('input', () => matchPoolFromSelectedTokens(false));
+
+        poolPresetSelect.addEventListener('change', (e) => {
+          if (e.target.value) {
+            poolAddr.value = e.target.value;
+            if (typeof window.recalculateMinOut === 'function') window.recalculateMinOut();
+          }
+        });
+
+        poolAddr.addEventListener('input', () => {
+          if (typeof window.recalculateMinOut === 'function') window.recalculateMinOut();
+        });
+
+        amountIn.addEventListener('input', () => {
+          if (typeof window.recalculateMinOut === 'function') window.recalculateMinOut();
+        });
+
+        slippagePct.addEventListener('change', () => {
+          if (typeof window.recalculateMinOut === 'function') window.recalculateMinOut();
+        });
+
+        reloadPoolsBtn.addEventListener('click', () => fetchPolygonPoolsJson(true));
+      });
+
+      modal.subscribeAccount((state) => {
+        const connectBtn = document.getElementById('connect-wallet');
+        const disconnectBtn = document.getElementById('disconnect-wallet');
+        const addressEl = document.getElementById('wallet-address');
+        const statusEl = document.getElementById('status-msg');
+
+        if (state.isConnected && state.address) {
+          window.userAddress = state.address;
+
+          if (connectBtn) {
+            connectBtn.textContent = `${state.address.slice(0, 6)}...${state.address.slice(-4)}`;
+            connectBtn.className =
+              'px-5 py-2.5 rounded-xl font-semibold bg-slate-800 text-emerald-400 border border-slate-700 cursor-pointer transition';
+          }
+
+          if (disconnectBtn) disconnectBtn.hidden = false;
+
+          if (addressEl) {
+            addressEl.textContent = `Connected: ${state.address}`;
+            addressEl.hidden = false;
+          }
+
+          const accountKey = `${state.address.toLowerCase()}:${state.chainId || ''}`;
+          if (accountKey !== lastLoggedAccountKey) {
+            lastLoggedAccountKey = accountKey;
+            window.logMessage(`[WALLET] Connected: ${state.address}`);
+            if (state.chainId && Number(state.chainId) !== CHAIN_ID) {
+              window.logMessage(`[WARN] Wallet is on Chain ${state.chainId}; expected Polygon (137).`);
+            }
+            if (typeof window.recalculateMinOut === 'function') window.recalculateMinOut();
+          }
+        } else {
+          window.userAddress = null;
+
+          if (connectBtn) {
+            connectBtn.textContent = 'Connect Wallet';
+            connectBtn.className =
+              'px-5 py-2.5 rounded-xl font-semibold bg-white text-slate-950 hover:bg-slate-200 cursor-pointer transition';
+          }
+
+          if (disconnectBtn) disconnectBtn.hidden = true;
+
+          if (addressEl) {
+            addressEl.textContent = '';
+            addressEl.hidden = true;
+          }
+
+          if (statusEl) statusEl.textContent = '';
+
+          if (lastLoggedAccountKey !== '') {
+            lastLoggedAccountKey = '';
+            window.logMessage('[WALLET] Disconnected.');
+          }
+        }
+      });
+
+      modal.subscribeNetwork((networkState) => {
+        const statusEl = document.getElementById('status-msg');
+        if (networkState?.chainId) {
+          if (Number(networkState.chainId) === CHAIN_ID) {
+            if (statusEl) {
+              statusEl.textContent = 'Network: Polygon Mainnet (137)';
+              statusEl.className = 'text-xs font-mono text-emerald-400';
+            }
+          } else if (statusEl) {
+            statusEl.textContent = `Wrong chain (${networkState.chainId}) — switch to Polygon Mainnet (137)`;
+            statusEl.className = 'text-xs font-mono text-amber-400';
+          }
+        }
+      });
+    </script>
+  </head>
+  <body class="bg-slate-950 text-slate-100 min-h-screen p-4 md:p-8 font-sans">
+    <div class="max-w-3xl mx-auto space-y-6">
+      <!-- Header -->
+      <header class="flex flex-wrap items-center justify-between gap-4 bg-slate-900 border border-slate-800 rounded-2xl p-5">
+        <div>
+          <h1 class="text-xl font-bold text-white">Roton Router — Polygon Testbench</h1>
+          <p class="text-sm text-slate-400">Polygon Mainnet (Chain ID 137) · Direct ERC-20 V2 Swaps</p>
+          <p id="wallet-address" hidden class="text-xs font-mono text-emerald-400 mt-1"></p>
+          <p id="status-msg" class="text-xs font-mono text-slate-400 mt-1"></p>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2.5">
+          <button
+            id="connect-wallet"
+            type="button"
+            class="px-5 py-2.5 rounded-xl font-semibold bg-white text-slate-950 hover:bg-slate-200 cursor-pointer transition"
+            hidden
+          >
+            Connect Wallet
+          </button>
+
+          <button
+            id="disconnect-wallet"
+            type="button"
+            class="px-4 py-2.5 rounded-xl font-semibold bg-rose-950/60 text-rose-300 border border-rose-800/70 hover:bg-rose-900/60 cursor-pointer transition text-sm"
+            hidden
+          >
+            Disconnect
+          </button>
+        </div>
+      </header>
+
+      <!-- Swap Testbench Card -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <h2 class="text-lg font-semibold text-white">Polygon <code class="text-purple-400">swapDirect</code> Execution</h2>
+          <div class="flex flex-wrap items-center gap-2">
+            <button
+           
