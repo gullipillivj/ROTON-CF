@@ -1,0 +1,66 @@
+{
+  "chainId": 137,
+  "network": "polygon",
+  "pools": [
+    {
+      "pair": "AUSD/RRTR",
+      "poolAddress": "0x91b072951efFdd971F7569677c3dE54F55a1f52e",
+      "type": "v2",
+      "dex": "quickswap_v2"
+    },
+    {
+      "pair": "RRTR/USDC",
+      "poolAddress": "0x98f4980e9bA408867FE8C46831ec7D9211b6D07A",
+      "type": "v2",
+      "dex": "quickswap_v2"
+    },
+    {
+      "pair": "RRTR/RRTRN",
+      "poolAddress": "0x4444b60b02493Bc615238ae58d366FD33a271B64",
+      "type": "v2",
+      "dex": "quickswap_v2"
+    },
+    {
+      "pair": "EURe/USDC",
+      "poolAddress": "0x2BF35dF24f2b5A5B103A86416506d4ACA3B0519b",
+      "type": "v2",
+      "dex": "quickswap_v2"
+    },
+    {
+      "pair": "TGBP/USDC",
+      "poolAddress": "0x66b1b1e1d030d36cae831b19c07fcf79bb842abb",
+      "type": "v2",
+      "dex": "v2"
+    },
+    {
+      "pair": "XSGD/USDC",
+      "poolAddress": "0x1f6082db7c8f4b199e17090cd5c8831a1dad1997",
+      "type": "v2",
+      "dex": "v2"
+    },
+    {
+      "pair": "JPYC/USDC",
+      "poolAddress": "0xF31AEAd34D7f7652BADc72dFeC7D6f4cB6019c98",
+      "type": "v2",
+      "dex": "quickswap_v2"
+    },
+    {
+      "pair": "EURA/WPOL",
+      "poolAddress": "0x9c6270ea8E17aaf7BA14dc8E36f6517b9Ad9472A",
+      "type": "v2",
+      "dex": "quickswap_v2"
+    },
+    {
+      "pair": "JPYC/USDC (CoinGecko ID)",
+      "poolAddress": "0x4643e3152a6ea3957e087cefbba74a1c628aa643e6b8a0edfae23a5796dde012",
+      "type": "bytes32_pool_id",
+      "dex": "non_v2"
+    },
+    {
+      "pair": "EURe/USDC (CoinGecko ID)",
+      "poolAddress": "0x85bc73101215a4fb4cbfd7cc71e514212c18de68863f70e5512d4b98f8f2cb88",
+      "type": "bytes32_pool_id",
+      "dex": "non_v2"
+    }
+  ]
+}
