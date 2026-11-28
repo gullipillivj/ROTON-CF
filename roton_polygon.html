@@ -3,18 +3,19 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Roton Router - Polygon Swap</title>
+    <title>Roton Router - Polygon Non-V2 Swap</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script type="module">
       import { createAppKit } from 'https://esm.sh/@reown/appkit';
       import { EthersAdapter } from 'https://esm.sh/@reown/appkit-adapter-ethers';
       import { polygon } from 'https://esm.sh/@reown/appkit/networks';
-      import { BrowserProvider, Contract, parseUnits, formatUnits } from 'https://esm.sh/ethers@6.13.0';
+      import { BrowserProvider, Contract, Interface, parseUnits, formatUnits } from 'https://esm.sh/ethers@6.13.0';
 
       const projectId = 'db6af3372f722385b2e4c5df24341c63';
       const CHAIN_ID = 137;
       const POLYGON_HEX_CHAIN_ID = '0x89';
       const POLYGON_ROUTER_ADDRESS = '0x7f1Aa65d88b3D62Ed5d782F7217c6FD6B036e781';
+      const DEFAULT_TARGET_ROUTER = '0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45'; // Uniswap V3 SwapRouter02 on Polygon
       const POOLS_POLYGON_URL = 'https://gullipillivj.github.io/ROTON-CF/pools_polygon.json';
 
       const POLYGON_TOKENS = [
@@ -31,18 +32,12 @@
         { symbol: 'RRTRN', label: 'RRTRN', address: '0xE7c921e2f78a9BCA5e959acf4517501F426BfE30', decimals: 18, priceUsd: 1.00 }
       ];
 
-      window.clampDecimals = function (valStr, decimals) {
-        const num = Number(valStr);
-        if (!Number.isFinite(num) || num <= 0) return '0';
-        const dec = Math.max(0, Math.min(Number(decimals) || 6, 18));
-        return Number(num.toFixed(dec)).toString();
-      };
-
       const FALLBACK_POLYGON_POOLS = [
-        { pair: 'XSGD/USDC', poolAddress: '0x1f6082db7c8f4b199e17090cd5c8831a1dad1997', type: 'v2', dex: 'v2' },
-        { pair: 'WPOL/USDC', poolAddress: '0xb3fa2fEB8EB215562B3A98A7eECa4A79ECf37DFc', type: 'v2', dex: 'quickswap_v2' },
-        { pair: 'JPYC/USDC', poolAddress: '0xF31AEAd34D7f7652BADc72dFeC7D6f4cB6019c98', type: 'v2', dex: 'quickswap_v2' },
-        { pair: 'EURe/USDC', poolAddress: '0x2BF35dF24f2b5A5B103A86416506d4ACA3B0519b', type: 'v2', dex: 'quickswap_v2' }
+        { pair: 'XSGD/USDC', poolAddress: '0x1f6082db7c8f4b199e17090cd5c8831a1dad1997', type: 'non_v2', dex: 'uniswap_v3', decimals: { XSGD: 6, USDC: 6 } },
+        { pair: 'AUSD/RRTR', poolAddress: '0x91b072951efFdd971F7569677c3dE54F55a1f52e', type: 'non_v2', dex: 'router', decimals: { AUSD: 6, RRTR: 18 } },
+        { pair: 'RRTR/USDC', poolAddress: '0x98f4980e9bA408867FE8C46831ec7D9211b6D07A', type: 'non_v2', dex: 'router', decimals: { RRTR: 18, USDC: 6 } },
+        { pair: 'JPYC/USDC', poolAddress: '0xF31AEAd34D7f7652BADc72dFeC7D6f4cB6019c98', type: 'non_v2', dex: 'router', decimals: { JPYC: 18, USDC: 6 } },
+        { pair: 'EURe/USDC', poolAddress: '0x2BF35dF24f2b5A5B103A86416506d4ACA3B0519b', type: 'non_v2', dex: 'router', decimals: { EURe: 18, EURA: 18, USDC: 6 } }
       ];
 
       const ERC20_ABI = [
@@ -53,16 +48,13 @@
         'function approve(address spender, uint256 amount) returns (bool)'
       ];
 
-      const V2_POOL_ABI = [
-        'function token0() view returns (address)',
-        'function token1() view returns (address)',
-        'function getReserves() view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast)'
-      ];
-
       const ROTON_ROUTER_ABI = [
         'function allowedRouters(address router) view returns (bool)',
-        'function swapDirect(address poolAddress, address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOutMin) external returns (uint256 amountOut)',
         'function swapViaRouter(address targetRouter, address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOutMin, bytes calldata routerCalldata) external returns (uint256 amountOut)'
+      ];
+
+      const SWAP_ROUTER_02_ABI = [
+        'function exactInputSingle((address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 amountIn, uint256 amountOutMinimum, uint160 sqrtPriceLimitX96) params) payable returns (uint256 amountOut)'
       ];
 
       let polygonPools = FALLBACK_POLYGON_POOLS;
@@ -74,8 +66,8 @@
         defaultNetwork: polygon,
         projectId,
         metadata: {
-          name: 'Roton Router - Polygon Swap',
-          description: 'Polygon Mainnet (137) Swap Interface',
+          name: 'Roton Router - Polygon Non-V2 Swap',
+          description: 'Polygon Mainnet (137) Non-V2 Router Swap Interface',
           url: window.location.origin,
           icons: []
         },
@@ -85,12 +77,20 @@
       window.appKitModal = modal;
       window.BrowserProvider = BrowserProvider;
       window.Contract = Contract;
+      window.Interface = Interface;
       window.parseUnits = parseUnits;
       window.formatUnits = formatUnits;
       window.ERC20_ABI = ERC20_ABI;
-      window.V2_POOL_ABI = V2_POOL_ABI;
       window.ROTON_ROUTER_ABI = ROTON_ROUTER_ABI;
+      window.SWAP_ROUTER_02_ABI = SWAP_ROUTER_02_ABI;
       window.latestTokenInBalance = 0;
+
+      window.clampDecimals = function (valStr, decimals) {
+        const num = Number(valStr);
+        if (!Number.isFinite(num) || num <= 0) return '0';
+        const dec = Math.max(0, Math.min(Number(decimals) || 6, 18));
+        return Number(num.toFixed(dec)).toString();
+      };
 
       function parseChainIdValue(rawId) {
         if (rawId === undefined || rawId === null || rawId === '') return null;
@@ -139,6 +139,37 @@
         if (!norm) return null;
         return POLYGON_TOKENS.find((t) => t.address.toLowerCase() === norm) || null;
       }
+
+      window.getDecimalsFromPoolJson = function (poolAddr, symIn, symOut, targetSym) {
+        const normPool = (poolAddr || '').toLowerCase();
+        const entry = (polygonPools || []).find((p) => {
+          if (normPool && (p.poolAddress || '').toLowerCase() === normPool) return true;
+          const parts = String(p.pair || '').split('/').map((s) => s.replace(/\(.*\)/g, '').trim().toUpperCase());
+          if (parts.length !== 2 || !symIn || !symOut) return false;
+          const a = parts[0] === 'EURE' ? 'EURA' : parts[0];
+          const b = parts[1] === 'EURE' ? 'EURA' : parts[1];
+          const inS = symIn.toUpperCase() === 'EURE' ? 'EURA' : symIn.toUpperCase();
+          const outS = symOut.toUpperCase() === 'EURE' ? 'EURA' : symOut.toUpperCase();
+          return (a === inS && b === outS) || (a === outS && b === inS);
+        });
+
+        if (!entry || !entry.decimals) return null;
+
+        const lookup = (k) => {
+          if (!k) return undefined;
+          if (entry.decimals[k] !== undefined) return entry.decimals[k];
+          const upper = k.toUpperCase();
+          for (const [key, val] of Object.entries(entry.decimals)) {
+            if (key.toUpperCase() === upper) return val;
+          }
+          if (upper === 'EURA' && entry.decimals.EURe !== undefined) return entry.decimals.EURe;
+          if (upper === 'EURE' && entry.decimals.EURA !== undefined) return entry.decimals.EURA;
+          return undefined;
+        };
+
+        const found = lookup(targetSym);
+        return found !== undefined && found !== null ? Number(found) : null;
+      };
 
       function formatCleanTokenQty(num) {
         if (!Number.isFinite(num) || num <= 0) return '0';
@@ -204,7 +235,7 @@
         poolSelect.innerHTML = '';
         const customOpt = document.createElement('option');
         customOpt.value = '';
-        customOpt.textContent = 'Custom / Manual Pool Address';
+        customOpt.textContent = 'Custom / Manual Pool Reference';
         poolSelect.appendChild(customOpt);
 
         polygonPools.forEach((entry) => {
@@ -212,7 +243,7 @@
           const opt = document.createElement('option');
           opt.value = entry.poolAddress;
           const shortId = `${entry.poolAddress.slice(0, 8)}...${entry.poolAddress.slice(-6)}`;
-          opt.textContent = `${entry.pair} [${entry.type || 'pool'} · ${entry.dex || 'dex'}] (${shortId})`;
+          opt.textContent = `${entry.pair} [${entry.dex || 'non_v2'}] (${shortId})`;
           poolSelect.appendChild(opt);
         });
 
@@ -224,7 +255,7 @@
 
       function pairsMatch(pairStr, symIn, symOut) {
         if (!pairStr || !symIn || !symOut) return false;
-        const parts = pairStr.split('/').map((s) => s.trim().toUpperCase());
+        const parts = pairStr.split('/').map((s) => s.replace(/\(.*\)/g, '').trim().toUpperCase());
         if (parts.length !== 2) return false;
         const [a, b] = parts;
 
@@ -258,11 +289,11 @@
           if (overwriteInput && poolInput) poolInput.value = matched.poolAddress;
           if (poolSelect) poolSelect.value = matched.poolAddress;
           if (statusEl) {
-            statusEl.textContent = `${matched.pair} (${matched.dex || matched.type || 'pool'}) -> ${matched.poolAddress}`;
+            statusEl.textContent = `${matched.pair} (${matched.dex || 'non_v2'}) -> ${matched.poolAddress}`;
             statusEl.className = 'text-xs font-mono text-emerald-400';
           }
         } else if (statusEl) {
-          statusEl.textContent = `No preset pool for ${symIn || 'FROM'}/${symOut || 'TO'} — enter a pool address or use swapViaRouter.`;
+          statusEl.textContent = `No JSON pool entry for ${symIn || 'FROM'}/${symOut || 'TO'} — swapViaRouter can still route via Target Router + Calldata.`;
           statusEl.className = 'text-xs font-mono text-slate-400';
         }
       }
@@ -304,32 +335,10 @@
         const tokenOutAddr = document.getElementById('tokenOutAddr');
         if (!tokenInSelect || !tokenOutSelect) return;
 
-        const knownSymbols = new Set(POLYGON_TOKENS.map((t) => t.symbol.toUpperCase()));
-        const extraTokens = [];
-
-        (polygonPools || []).forEach((entry) => {
-          const parts = String(entry.pair || '').split('/');
-          parts.forEach((rawSym) => {
-            const cleanSym = rawSym.replace(/\(.*\)/g, '').trim();
-            const upper = cleanSym.toUpperCase();
-            if (!upper || knownSymbols.has(upper)) return;
-            knownSymbols.add(upper);
-            const dec = entry.decimals?.[cleanSym] ?? entry.decimals?.[upper] ?? 18;
-            extraTokens.push({
-              symbol: cleanSym,
-              label: cleanSym,
-              address: '0x0000000000000000000000000000000000000000',
-              decimals: Number(dec) || 18,
-              priceUsd: 1.0
-            });
-          });
-        });
-
-        const allTokens = [...POLYGON_TOKENS, ...extraTokens];
         tokenInSelect.innerHTML = '';
         tokenOutSelect.innerHTML = '';
 
-        allTokens.forEach((t) => {
+        POLYGON_TOKENS.forEach((t) => {
           const optIn = document.createElement('option');
           optIn.value = t.address;
           optIn.dataset.symbol = t.symbol;
@@ -343,10 +352,10 @@
           tokenOutSelect.appendChild(optOut);
         });
 
-        tokenInSelect.selectedIndex = 0;
-        tokenOutSelect.selectedIndex = 1;
-        if (tokenInAddr) tokenInAddr.value = allTokens[0].address;
-        if (tokenOutAddr) tokenOutAddr.value = allTokens[1].address;
+        tokenInSelect.selectedIndex = 0; // USDC
+        tokenOutSelect.selectedIndex = 1; // XSGD
+        if (tokenInAddr) tokenInAddr.value = POLYGON_TOKENS[0].address;
+        if (tokenOutAddr) tokenOutAddr.value = POLYGON_TOKENS[1].address;
       }
 
       window.refreshWalletBalances = async function () {
@@ -378,6 +387,9 @@
           const normUser = window.to20Byte(userAddr);
           const tokenInAddr = window.to20Byte(document.getElementById('tokenInAddr')?.value?.trim());
           const tokenOutAddr = window.to20Byte(document.getElementById('tokenOutAddr')?.value?.trim());
+          const poolAddr = window.to20Byte(document.getElementById('poolAddr')?.value?.trim());
+          const metaIn = getTokenMetaByAddress(tokenInAddr);
+          const metaOut = getTokenMetaByAddress(tokenOutAddr);
 
           const nativeWei = await provider.getBalance(normUser);
           const nativeQty = Number(formatUnits(nativeWei, 18));
@@ -387,24 +399,24 @@
 
           if (tokenInAddr && inBalEl) {
             const cIn = new Contract(tokenInAddr, ERC20_ABI, provider);
+            const jsonDecIn = window.getDecimalsFromPoolJson(poolAddr, metaIn?.symbol, metaOut?.symbol, metaIn?.symbol);
             const [rawIn, decIn] = await Promise.all([
               cIn.balanceOf(normUser),
-              cIn.decimals().catch(() => 18)
+              jsonDecIn !== null ? Promise.resolve(jsonDecIn) : cIn.decimals().catch(() => 18)
             ]);
             const qtyIn = Number(formatUnits(rawIn, Number(decIn)));
             window.latestTokenInBalance = qtyIn;
-            const metaIn = getTokenMetaByAddress(tokenInAddr);
             inBalEl.textContent = `$${(qtyIn * (metaIn?.priceUsd || 1)).toFixed(2)}`;
           }
 
           if (tokenOutAddr && outBalEl) {
             const cOut = new Contract(tokenOutAddr, ERC20_ABI, provider);
+            const jsonDecOut = window.getDecimalsFromPoolJson(poolAddr, metaIn?.symbol, metaOut?.symbol, metaOut?.symbol);
             const [rawOut, decOut] = await Promise.all([
               cOut.balanceOf(normUser),
-              cOut.decimals().catch(() => 18)
+              jsonDecOut !== null ? Promise.resolve(jsonDecOut) : cOut.decimals().catch(() => 18)
             ]);
             const qtyOut = Number(formatUnits(rawOut, Number(decOut)));
-            const metaOut = getTokenMetaByAddress(tokenOutAddr);
             outBalEl.textContent = `$${(qtyOut * (metaOut?.priceUsd || 1)).toFixed(2)}`;
           }
 
@@ -455,26 +467,68 @@
         }
       };
 
-      function syncExecModeUi() {
-        const mode = document.getElementById('execModeSelect')?.value || 'direct';
-        const routerViaBox = document.getElementById('viaRouterFields');
-        if (routerViaBox) {
-          routerViaBox.classList.toggle('hidden', mode === 'direct');
+      window.buildV3SwapCalldata = async function () {
+        const walletProvider = window.appKitModal?.getWalletProvider();
+        const rawAddr = window.userAddress || window.appKitModal?.getAddress();
+        const userAddress = window.to20Byte(rawAddr);
+        if (!walletProvider || !userAddress) {
+          window.logMessage('[WARN] Connect wallet first so recipient address is known.');
+          return;
         }
-      }
+
+        const tokenInAddr = window.to20Byte(document.getElementById('tokenInAddr')?.value);
+        const tokenOutAddr = window.to20Byte(document.getElementById('tokenOutAddr')?.value);
+        const poolAddr = window.to20Byte(document.getElementById('poolAddr')?.value);
+        const humanAmountIn = (document.getElementById('amountIn')?.value || '').trim();
+        const feeTier = Number(document.getElementById('v3FeeTier')?.value || 500);
+        const calldataInput = document.getElementById('routerCalldataInput');
+
+        if (!tokenInAddr || !tokenOutAddr || !humanAmountIn || Number(humanAmountIn) <= 0) {
+          window.logMessage('[WARN] Enter valid From Token, To Token, and positive Amount to Swap first.');
+          return;
+        }
+
+        try {
+          const provider = new BrowserProvider(walletProvider);
+          const tokenIn = new Contract(tokenInAddr, ERC20_ABI, provider);
+          const metaIn = getTokenMetaByAddress(tokenInAddr);
+          const metaOut = getTokenMetaByAddress(tokenOutAddr);
+          const jsonDecIn = window.getDecimalsFromPoolJson(poolAddr, metaIn?.symbol, metaOut?.symbol, metaIn?.symbol);
+          const decimals = jsonDecIn ?? Number(await tokenIn.decimals().catch(() => 18));
+
+          const cleanAmountIn = window.clampDecimals(humanAmountIn, decimals);
+          const amountInWei = parseUnits(cleanAmountIn, decimals);
+          const amountToSwapWei = amountInWei - (amountInWei * 5n) / 10000n;
+
+          const iface = new Interface(SWAP_ROUTER_02_ABI);
+          const encoded = iface.encodeFunctionData('exactInputSingle', [{
+            tokenIn: tokenInAddr,
+            tokenOut: tokenOutAddr,
+            fee: feeTier,
+            recipient: userAddress,
+            amountIn: amountToSwapWei,
+            amountOutMinimum: 1n,
+            sqrtPriceLimitX96: 0n
+          }]);
+
+          if (calldataInput) calldataInput.value = encoded;
+          window.logMessage(`[CALLDATA] Built SwapRouter02 exactInputSingle calldata (fee=${feeTier}, netAmountIn=${amountToSwapWei.toString()}).`);
+        } catch (err) {
+          window.logMessage(`[ERROR] Calldata build failed: ${err.shortMessage || err.message}`);
+        }
+      };
 
       window.addEventListener('DOMContentLoaded', async () => {
         document.getElementById('routerAddr').value = POLYGON_ROUTER_ADDRESS;
+        document.getElementById('targetRouterAddr').value = DEFAULT_TARGET_ROUTER;
         populateTokenSelectors();
         populatePoolDropdown();
-        syncExecModeUi();
         updateBalanceHint();
         await fetchPolygonPoolsJson(false);
 
         const connectBtn = document.getElementById('connect-wallet');
         const disconnectBtn = document.getElementById('disconnect-wallet');
         const switchPolygonBtn = document.getElementById('switch-polygon-btn');
-        const execModeSelect = document.getElementById('execModeSelect');
         const tokenInSelect = document.getElementById('tokenInSelect');
         const tokenOutSelect = document.getElementById('tokenOutSelect');
         const tokenInAddr = document.getElementById('tokenInAddr');
@@ -484,8 +538,8 @@
         const applyUsdBtn = document.getElementById('applyUsdBtn');
         const amountIn = document.getElementById('amountIn');
         const reloadPoolsBtn = document.getElementById('reloadPoolsBtn');
+        const buildCalldataBtn = document.getElementById('buildCalldataBtn');
 
-        if (execModeSelect) execModeSelect.addEventListener('change', syncExecModeUi);
         if (connectBtn) {
           connectBtn.hidden = false;
           connectBtn.addEventListener('click', () => modal.open());
@@ -495,6 +549,9 @@
         }
         if (switchPolygonBtn) {
           switchPolygonBtn.addEventListener('click', async () => window.forceSwitchToPolygon());
+        }
+        if (buildCalldataBtn) {
+          buildCalldataBtn.addEventListener('click', async () => window.buildV3SwapCalldata());
         }
 
         tokenInSelect.addEventListener('change', (e) => {
@@ -595,8 +652,8 @@
     <div class="max-w-3xl mx-auto space-y-6">
       <header class="flex flex-wrap items-center justify-between gap-4 bg-slate-900 border border-slate-800 rounded-2xl p-5">
         <div>
-          <h1 class="text-xl font-bold text-white">Roton Router — Polygon Swap</h1>
-          <p class="text-sm text-slate-400">Polygon Mainnet (Chain ID 137)</p>
+          <h1 class="text-xl font-bold text-white">Roton Router — Polygon Non-V2 Swap</h1>
+          <p class="text-sm text-slate-400">Polygon Mainnet (Chain ID 137) · swapViaRouter Only</p>
           <p id="wallet-address" hidden class="text-xs font-mono text-emerald-400 mt-1"></p>
           <p id="status-msg" class="text-xs font-mono text-slate-400 mt-1"></p>
         </div>
@@ -633,7 +690,7 @@
 
       <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
         <div class="flex flex-wrap items-center justify-between gap-2">
-          <h2 class="text-lg font-semibold text-white">Swap</h2>
+          <h2 class="text-lg font-semibold text-white">Swap (swapViaRouter)</h2>
           <div class="flex flex-wrap items-center gap-2">
             <button
               id="reloadPoolsBtn"
@@ -647,7 +704,7 @@
               type="button"
               class="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-slate-700 cursor-pointer transition"
             >
-              Check Route
+              Check Allowlist
             </button>
           </div>
         </div>
@@ -751,14 +808,14 @@
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label class="block text-xs text-slate-400 mb-1">Pool Preset</label>
+            <label class="block text-xs text-slate-400 mb-1">Pool Preset (Decimals &amp; Pair Reference)</label>
             <select
               id="poolPresetSelect"
               class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm font-mono text-slate-100"
             ></select>
           </div>
           <div>
-            <label class="block text-xs text-slate-400 mb-1">Pool Address</label>
+            <label class="block text-xs text-slate-400 mb-1">Pool Address / ID</label>
             <input
               type="text"
               id="poolAddr"
@@ -770,74 +827,69 @@
         </div>
         <p id="poolJsonStatus" class="text-xs font-mono text-slate-400">Loading pools...</p>
 
-        <details open class="bg-slate-950/60 border border-slate-800/80 rounded-xl p-3.5">
-          <summary class="text-xs font-semibold text-slate-300 cursor-pointer select-none">
-            Router &amp; Swap Mode
-          </summary>
-          <div class="mt-3 space-y-3">
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div>
-                <label class="block text-xs text-slate-400 mb-1">Roton Router</label>
-                <input
-                  type="text"
-                  id="routerAddr"
-                  value="0x7f1Aa65d88b3D62Ed5d782F7217c6FD6B036e781"
-                  class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-slate-200"
-                />
-              </div>
-              <div>
-                <label class="block text-xs text-slate-400 mb-1">Execution Mode</label>
-                <select
-                  id="execModeSelect"
-                  class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-slate-200"
-                >
-                  <option value="direct" selected>swapDirect (V2 Pool)</option>
-                  <option value="via_router">swapViaRouter (Target Router + Calldata)</option>
-                </select>
-              </div>
-              <div>
-                <label class="block text-xs text-slate-400 mb-1">Slippage</label>
-                <select
-                  id="slippagePct"
-                  class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-slate-200"
-                >
-                  <option value="1" selected>1% Slippage</option>
-                  <option value="2">2% Slippage</option>
-                </select>
-              </div>
+        <div class="bg-slate-950/60 border border-slate-800/80 rounded-xl p-3.5 space-y-3">
+          <div class="text-xs font-semibold text-slate-300">Non-V2 Router Execution (`swapViaRouter`)</div>
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div>
+              <label class="block text-xs text-slate-400 mb-1">Roton Router</label>
+              <input
+                type="text"
+                id="routerAddr"
+                value="0x7f1Aa65d88b3D62Ed5d782F7217c6FD6B036e781"
+                class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-slate-200"
+              />
             </div>
-
-            <div id="viaRouterFields" class="hidden space-y-2.5 pt-2 border-t border-slate-800">
-              <div>
-                <label class="block text-xs text-slate-400 mb-1">Target Router (`targetRouter`)</label>
-                <input
-                  type="text"
-                  id="targetRouterAddr"
-                  value=""
-                  placeholder="0x..."
-                  class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-slate-200"
-                />
-              </div>
-              <div>
-                <label class="block text-xs text-slate-400 mb-1">Router Calldata (`routerCalldata`)</label>
-                <input
-                  type="text"
-                  id="routerCalldataInput"
-                  value=""
-                  placeholder="0x..."
-                  class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-slate-200"
-                />
-              </div>
+            <div>
+              <label class="block text-xs text-slate-400 mb-1">Allowlisted Target Router</label>
+              <input
+                type="text"
+                id="targetRouterAddr"
+                value="0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45"
+                placeholder="0x..."
+                class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-slate-200"
+              />
+            </div>
+            <div>
+              <label class="block text-xs text-slate-400 mb-1">V3 Fee Tier (for Auto-Build)</label>
+              <select
+                id="v3FeeTier"
+                class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-slate-200"
+              >
+                <option value="100">100 (0.01% Stable/FX)</option>
+                <option value="500" selected>500 (0.05%)</option>
+                <option value="3000">3000 (0.30%)</option>
+                <option value="10000">10000 (1.00%)</option>
+              </select>
             </div>
           </div>
-        </details>
+
+          <div>
+            <div class="flex items-center justify-between mb-1">
+              <label class="block text-xs text-slate-400">Router Calldata (`routerCalldata`)</label>
+              <button
+                id="buildCalldataBtn"
+                type="button"
+                class="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 cursor-pointer transition"
+              >
+                Auto-Build V3 Calldata
+              </button>
+            </div>
+            <input
+              type="text"
+              id="routerCalldataInput"
+              value=""
+              placeholder="Click Auto-Build V3 Calldata or paste 0x... router calldata"
+              class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-slate-200"
+            />
+          </div>
+        </div>
 
         <button
           id="execBtn"
           type="button"
           class="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-3.5 rounded-xl transition cursor-pointer text-sm"
         >
-          Swap
+          Swap via Router
         </button>
       </div>
 
@@ -847,7 +899,7 @@
           id="consoleLog"
           class="bg-slate-950 border border-slate-800 rounded-xl p-4 font-mono text-xs text-emerald-400 min-h-[150px] max-h-[280px] overflow-y-auto space-y-1"
         >
-          <div>[SYSTEM] Polygon (137) testbench ready. Connect wallet to begin...</div>
+          <div>[SYSTEM] Polygon (137) non-V2 testbench ready. Connect wallet to begin...</div>
         </div>
       </div>
     </div>
@@ -874,7 +926,6 @@
 
         const routerAddr = window.to20Byte(document.getElementById('routerAddr')?.value);
         const targetRouterAddr = window.to20Byte(document.getElementById('targetRouterAddr')?.value);
-        const poolAddr = window.to20Byte(document.getElementById('poolAddr')?.value);
 
         try {
           const provider = new window.BrowserProvider(ctx.walletProvider);
@@ -884,30 +935,14 @@
             return;
           }
 
-          if (routerAddr && targetRouterAddr) {
-            const router = new Contract(routerAddr, window.ROTON_ROUTER_ABI, provider);
-            const allowed = await router.allowedRouters(targetRouterAddr).catch(() => false);
-            window.logMessage(`[ROUTE] allowedRouters(${targetRouterAddr}) = ${allowed}`);
-          }
-
-          if (!poolAddr) {
-            window.logMessage('[INFO] No pool address entered.');
+          if (!routerAddr || !targetRouterAddr) {
+            window.logMessage('[WARN] Enter Roton Router and Target Router addresses first.');
             return;
           }
 
-          const code = await provider.getCode(poolAddr);
-          if (!code || code === '0x') {
-            window.logMessage(`[WARN] No contract at ${poolAddr} on Polygon.`);
-            return;
-          }
-
-          try {
-            const pool = new Contract(poolAddr, window.V2_POOL_ABI, provider);
-            const [t0, t1, reserves] = await Promise.all([pool.token0(), pool.token1(), pool.getReserves()]);
-            window.logMessage(`[ROUTE] V2 pair: token0=${t0} | token1=${t1} | r0=${reserves[0]} | r1=${reserves[1]}`);
-          } catch (_) {
-            window.logMessage(`[ROUTE] ${poolAddr} does not use V2 getReserves() (use swapViaRouter with targetRouter & calldata).`);
-          }
+          const router = new Contract(routerAddr, window.ROTON_ROUTER_ABI, provider);
+          const allowed = await router.allowedRouters(targetRouterAddr).catch(() => false);
+          window.logMessage(`[ALLOWLIST] allowedRouters(${targetRouterAddr}) = ${allowed}`);
         } catch (err) {
           window.logMessage(`[ERROR] ${err.shortMessage || err.message}`);
         }
@@ -922,17 +957,19 @@
         const tokenOutAddr = window.to20Byte(document.getElementById('tokenOutAddr')?.value);
         const poolAddr = window.to20Byte(document.getElementById('poolAddr')?.value);
         const targetRouterAddr = window.to20Byte(document.getElementById('targetRouterAddr')?.value);
-        const routerCalldata = (document.getElementById('routerCalldataInput')?.value || '').trim();
-        const execMode = document.getElementById('execModeSelect')?.value || 'direct';
+        let routerCalldata = (document.getElementById('routerCalldataInput')?.value || '').trim();
         const humanAmountIn = (document.getElementById('amountIn')?.value || '').trim();
-        const slippageVal = Number(document.getElementById('slippagePct')?.value || 1);
 
         if (!routerAddr || !tokenInAddr || !tokenOutAddr) {
-          window.logMessage('[WARN] Check Router, From Token, and To Token addresses.');
+          window.logMessage('[WARN] Check Roton Router, From Token, and To Token addresses.');
           return;
         }
         if (tokenInAddr === tokenOutAddr) {
           window.logMessage('[WARN] From Token and To Token must be different.');
+          return;
+        }
+        if (!targetRouterAddr || targetRouterAddr === routerAddr) {
+          window.logMessage('[WARN] Enter a valid external DEX Target Router (not RotonRouter itself).');
           return;
         }
         if (!humanAmountIn || Number(humanAmountIn) <= 0) {
@@ -947,14 +984,36 @@
             const switched = await window.forceSwitchToPolygon();
             actualChain = await window.getActualChainId(provider);
             if (!switched || actualChain !== 137) {
-              window.logMessage(`[WARN] Please switch wallet to Polygon (137).`);
+              window.logMessage('[WARN] Please switch wallet to Polygon (137).');
               return;
             }
           }
 
           const signer = await provider.getSigner();
+          const router = new Contract(routerAddr, window.ROTON_ROUTER_ABI, signer);
+
+          const isAllowed = await router.allowedRouters(targetRouterAddr).catch(() => false);
+          if (!isAllowed) {
+            window.logMessage(`[WARN] Target Router ${targetRouterAddr} is not allowlisted on RotonRouter (call setAllowedRouter first).`);
+            return;
+          }
+
+          if (!routerCalldata || !routerCalldata.startsWith('0x') || routerCalldata.length < 10) {
+            await window.buildV3SwapCalldata();
+            routerCalldata = (document.getElementById('routerCalldataInput')?.value || '').trim();
+          }
+          if (!routerCalldata || !routerCalldata.startsWith('0x') || routerCalldata.length < 10) {
+            window.logMessage('[WARN] Enter or auto-build valid hex Router Calldata (0x...).');
+            return;
+          }
+
           const tokenIn = new Contract(tokenInAddr, window.ERC20_ABI, signer);
-          const decimals = Number(await tokenIn.decimals().catch(() => 18));
+          const tokenInMeta = (await tokenIn.symbol().catch(() => '')).toUpperCase();
+          const tokenOutContract = new Contract(tokenOutAddr, window.ERC20_ABI, provider);
+          const tokenOutMeta = (await tokenOutContract.symbol().catch(() => '')).toUpperCase();
+
+          const jsonDecIn = window.getDecimalsFromPoolJson(poolAddr, tokenInMeta, tokenOutMeta, tokenInMeta);
+          const decimals = jsonDecIn ?? Number(await tokenIn.decimals().catch(() => 18));
           const cleanAmountIn = window.clampDecimals(humanAmountIn, decimals);
           const amountInWei = parseUnits(cleanAmountIn, decimals);
 
@@ -975,74 +1034,19 @@
             window.logMessage('[APPROVE] Confirmed.');
           }
 
-          const router = new Contract(routerAddr, window.ROTON_ROUTER_ABI, signer);
-          const amountToSwapWei = amountInWei - (amountInWei * 5n) / 10000n;
-          const bps = slippageVal === 2 ? 200n : 100n;
-
-          if (execMode === 'via_router') {
-            if (!targetRouterAddr || !routerCalldata || !routerCalldata.startsWith('0x') || routerCalldata.length < 10) {
-              window.logMessage('[WARN] Enter Target Router and hex Router Calldata (0x...) for swapViaRouter.');
-              return;
-            }
-            const isAllowed = await router.allowedRouters(targetRouterAddr).catch(() => false);
-            if (!isAllowed) {
-              window.logMessage(`[WARN] Target Router ${targetRouterAddr} is not allowlisted yet.`);
-              return;
-            }
-
-            window.logMessage('[SWAP] Sending swapViaRouter to wallet...');
-            const swapTx = await router.swapViaRouter(
-              targetRouterAddr,
-              tokenInAddr,
-              tokenOutAddr,
-              amountInWei,
-              1n,
-              routerCalldata,
-              { gasLimit: 320000n }
-            );
-            window.logMessage(`[SWAP] Tx hash: ${swapTx.hash}`);
-            const receipt = await swapTx.wait();
-            window.logMessage(`[SUCCESS] Confirmed in block ${receipt.blockNumber}!`);
-          } else {
-            if (!poolAddr) {
-              window.logMessage('[WARN] Enter a Pool Address for swapDirect.');
-              return;
-            }
-
-            let minOutWei = 1n;
-            try {
-              const pool = new Contract(poolAddr, window.V2_POOL_ABI, provider);
-              const [t0, t1, reserves] = await Promise.all([pool.token0(), pool.token1(), pool.getReserves()]);
-              const t0Lower = t0.toLowerCase();
-              const t1Lower = t1.toLowerCase();
-              if ((tokenInAddr === t0Lower || tokenInAddr === t1Lower) && (tokenOutAddr === t0Lower || tokenOutAddr === t1Lower)) {
-                const isToken0 = tokenInAddr === t0Lower;
-                const reserveIn = BigInt(isToken0 ? reserves[0] : reserves[1]);
-                const reserveOut = BigInt(isToken0 ? reserves[1] : reserves[0]);
-                if (reserveIn > 0n && reserveOut > 0n) {
-                  const amountInWithFee = amountToSwapWei * 997n;
-                  const expectedOutWei = (amountInWithFee * reserveOut) / (reserveIn * 1000n + amountInWithFee);
-                  minOutWei = (expectedOutWei * (10000n - bps)) / 10000n;
-                  if (minOutWei < 1n) minOutWei = 1n;
-                }
-              }
-            } catch (_) {
-              minOutWei = 1n;
-            }
-
-            window.logMessage('[SWAP] Sending swapDirect to wallet...');
-            const swapTx = await router.swapDirect(
-              poolAddr,
-              tokenInAddr,
-              tokenOutAddr,
-              amountInWei,
-              minOutWei,
-              { gasLimit: 220000n }
-            );
-            window.logMessage(`[SWAP] Tx hash: ${swapTx.hash}`);
-            const receipt = await swapTx.wait();
-            window.logMessage(`[SUCCESS] Confirmed in block ${receipt.blockNumber}!`);
-          }
+          window.logMessage('[SWAP] Sending swapViaRouter to wallet...');
+          const swapTx = await router.swapViaRouter(
+            targetRouterAddr,
+            tokenInAddr,
+            tokenOutAddr,
+            amountInWei,
+            1n,
+            routerCalldata,
+            { gasLimit: 350000n }
+          );
+          window.logMessage(`[SWAP] Tx hash: ${swapTx.hash}`);
+          const receipt = await swapTx.wait();
+          window.logMessage(`[SUCCESS] Confirmed in block ${receipt.blockNumber}!`);
 
           await window.refreshWalletBalances();
         } catch (err) {
