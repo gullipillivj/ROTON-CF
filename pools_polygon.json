@@ -55,6 +55,18 @@
       "poolAddress": "0x85bc73101215a4fb4cbfd7cc71e514212c18de68863f70e5512d4b98f8f2cb88",
       "type": "bytes32_pool_id",
       "dex": "non_v2"
+    },
+    {
+      "pair": "RRTR/WPOL",
+      "poolAddress": "0x421705c0b8b0D7383f432a4a547710E42e9e6564",
+      "type": "v2",
+      "dex": "quickswap_v2"
+    },
+    {
+      "pair": "WPOL/USDC",
+      "poolAddress": "0xb3fa2fEB8EB215562B3A98A7eECa4A79ECf37DFc",
+      "type": "v2",
+      "dex": "quickswap_v2"
     }
   ]
 }
