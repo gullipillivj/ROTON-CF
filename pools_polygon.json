@@ -6,67 +6,113 @@
       "pair": "AUSD/RRTR",
       "poolAddress": "0x91b072951efFdd971F7569677c3dE54F55a1f52e",
       "type": "v2",
-      "dex": "quickswap_v2"
+      "dex": "quickswap_v2",
+      "decimals": {
+        "AUSD": 6,
+        "RRTR": 18
+      }
     },
     {
       "pair": "RRTR/USDC",
       "poolAddress": "0x98f4980e9bA408867FE8C46831ec7D9211b6D07A",
       "type": "v2",
-      "dex": "quickswap_v2"
+      "dex": "quickswap_v2",
+      "decimals": {
+        "RRTR": 18,
+        "USDC": 6
+      }
     },
     {
       "pair": "RRTR/RRTRN",
       "poolAddress": "0x4444b60b02493Bc615238ae58d366FD33a271B64",
       "type": "v2",
-      "dex": "quickswap_v2"
+      "dex": "quickswap_v2",
+      "decimals": {
+        "RRTR": 18,
+        "RRTRN": 18
+      }
     },
     {
       "pair": "EURe/USDC",
       "poolAddress": "0x2BF35dF24f2b5A5B103A86416506d4ACA3B0519b",
       "type": "v2",
-      "dex": "quickswap_v2"
+      "dex": "quickswap_v2",
+      "decimals": {
+        "EURE": 18,
+        "EURe": 18,
+        "USDC": 6
+      }
     },
     {
       "pair": "TGBP/USDC",
       "poolAddress": "0x66b1b1e1d030d36cae831b19c07fcf79bb842abb",
       "type": "v2",
-      "dex": "v2"
+      "dex": "v2",
+      "decimals": {
+        "TGBP": 18,
+        "USDC": 6
+      }
     },
     {
       "pair": "XSGD/USDC",
       "poolAddress": "0x1f6082db7c8f4b199e17090cd5c8831a1dad1997",
       "type": "v2",
-      "dex": "v2"
+      "dex": "v2",
+      "decimals": {
+        "XSGD": 6,
+        "USDC": 6
+      }
     },
     {
       "pair": "JPYC/USDC",
       "poolAddress": "0xF31AEAd34D7f7652BADc72dFeC7D6f4cB6019c98",
       "type": "v2",
-      "dex": "quickswap_v2"
+      "dex": "quickswap_v2",
+      "decimals": {
+        "JPYC": 18,
+        "USDC": 6
+      }
     },
     {
       "pair": "JPYC/USDC (CoinGecko ID)",
       "poolAddress": "0x4643e3152a6ea3957e087cefbba74a1c628aa643e6b8a0edfae23a5796dde012",
       "type": "bytes32_pool_id",
-      "dex": "non_v2"
+      "dex": "non_v2",
+      "decimals": {
+        "JPYC": 18,
+        "USDC": 6
+      }
     },
     {
       "pair": "EURe/USDC (CoinGecko ID)",
       "poolAddress": "0x85bc73101215a4fb4cbfd7cc71e514212c18de68863f70e5512d4b98f8f2cb88",
       "type": "bytes32_pool_id",
-      "dex": "non_v2"
+      "dex": "non_v2",
+      "decimals": {
+        "EURE": 18,
+        "EURe": 18,
+        "USDC": 6
+      }
     },
     {
       "pair": "RRTR/WPOL",
       "poolAddress": "0x421705c0b8b0D7383f432a4a547710E42e9e6564",
       "type": "v2",
-      "dex": "quickswap_v2"
+      "dex": "quickswap_v2",
+      "decimals": {
+        "RRTR": 18,
+        "WPOL": 18
+      }
     },
     {
       "pair": "WPOL/USDC",
       "poolAddress": "0xb3fa2fEB8EB215562B3A98A7eECa4A79ECf37DFc",
       "type": "v2",
-      "dex": "quickswap_v2"
+      "dex": "quickswap_v2",
+      "decimals": {
+        "WPOL": 18,
+        "USDC": 6
+      }
     }
   ]
 }
