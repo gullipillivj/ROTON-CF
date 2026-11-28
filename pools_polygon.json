@@ -45,12 +45,6 @@
       "dex": "quickswap_v2"
     },
     {
-      "pair": "EURA/WPOL",
-      "poolAddress": "0x9c6270ea8E17aaf7BA14dc8E36f6517b9Ad9472A",
-      "type": "v2",
-      "dex": "quickswap_v2"
-    },
-    {
       "pair": "JPYC/USDC (CoinGecko ID)",
       "poolAddress": "0x4643e3152a6ea3957e087cefbba74a1c628aa643e6b8a0edfae23a5796dde012",
       "type": "bytes32_pool_id",
