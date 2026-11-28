@@ -116,19 +116,26 @@
         return BSC_TOKENS.find((t) => t.address.toLowerCase() === lower) || null;
       }
 
-      window.applyUsdAmount = function () {
+      window.getUsdComputedAmountInWei = function (decimals = 18) {
         const usdInput = document.getElementById('usdAmount');
-        const amountInInput = document.getElementById('amountIn');
-        const tokenInAddr = document.getElementById('tokenInAddr').value.trim();
-        if (!usdInput || !amountInInput) return;
-
-        const usdVal = parseFloat(usdInput.value);
-        if (Number.isNaN(usdVal) || usdVal <= 0) return;
-
+        const tokenInAddr = document.getElementById('tokenInAddr')?.value?.trim();
+        const usdVal = parseFloat(usdInput?.value ?? '0.05');
+        const safeUsd = Number.isNaN(usdVal) || usdVal <= 0 ? 0.05 : usdVal;
         const meta = getTokenMetaByAddress(tokenInAddr);
         const priceUsd = meta && meta.priceUsd ? Number(meta.priceUsd) : 1.0;
-        const qty = usdVal / priceUsd;
-        amountInInput.value = qty >= 1 ? qty.toFixed(6) : qty.toFixed(6);
+        const qty = safeUsd / priceUsd;
+        const dec = Number(decimals || meta?.decimals || 18);
+        const weiBigInt = BigInt(Math.max(1, Math.round(qty * Math.pow(10, dec))));
+        return { usdVal: safeUsd, priceUsd, qty, dec, weiBigInt };
+      };
+
+      window.applyUsdAmount = function () {
+        const amountInInput = document.getElementById('amountIn');
+        const tokenInAddr = document.getElementById('tokenInAddr')?.value?.trim();
+        if (!amountInInput) return;
+        const meta = getTokenMetaByAddress(tokenInAddr);
+        const { qty } = window.getUsdComputedAmountInWei(meta?.decimals || 18);
+        amountInInput.value = qty.toFixed(6);
 
         if (typeof window.recalculateMinOut === 'function') {
           window.recalculateMinOut();
@@ -419,6 +426,7 @@
           if (e.target.value) {
             poolAddr.value = e.target.value;
             if (typeof window.recalculateMinOut === 'function') window.recalculateMinOut();
+            if (typeof window.refreshWalletBalances === 'function') window.refreshWalletBalances();
           }
         });
 
@@ -769,7 +777,13 @@
           pool.getReserves()
         ]);
 
-        const amountInWei = parseUnits(String(humanAmountIn), Number(decIn));
+        const decInNum = Number(decIn);
+        const decOutNum = Number(decOut);
+        const usdCalc = window.getUsdComputedAmountInWei(decInNum);
+        const amountInWei =
+          humanAmountIn && Number(humanAmountIn) > 0 && Math.abs(Number(humanAmountIn) - usdCalc.qty) > 1e-9
+            ? parseUnits(String(humanAmountIn), decInNum)
+            : usdCalc.weiBigInt;
         const amountToSwap = amountInWei - (amountInWei * 5n) / 10000n;
 
         const inLower = tokenInAddr.toLowerCase();
@@ -804,10 +818,11 @@
 
         return {
           amountInWei,
+          amountInHuman: formatUnits(amountInWei, decInNum),
           expectedOutWei,
           minAmountOutWei,
-          expectedOutFormatted: formatUnits(expectedOutWei, Number(decOut)),
-          minAmountOutFormatted: formatUnits(minAmountOutWei, Number(decOut)),
+          expectedOutFormatted: formatUnits(expectedOutWei, decOutNum),
+          minAmountOutFormatted: formatUnits(minAmountOutWei, decOutNum),
           slippagePct: Number(slippageVal) === 2 ? 2 : 1
         };
       }
@@ -956,18 +971,19 @@
             window.logMessage('[INFO] Could not read decimals(), defaulting to 18.');
           }
 
-          const amountInWei = parseUnits(humanAmountIn, decimals);
+          const amountInWei = quote.amountInWei;
+          const amountInDisplay = quote.amountInHuman || formatUnits(amountInWei, decimals);
           const bal = await tokenIn.balanceOf(ctx.userAddress);
           if (bal < amountInWei) {
             window.logMessage(
-              `[WARN] Token In balance (${formatUnits(bal, decimals)}) is less than amountIn (${humanAmountIn}).`
+              `[WARN] Token In balance (${formatUnits(bal, decimals)}) is less than amountIn (${amountInDisplay}).`
             );
           }
 
           const currentAllowance = await tokenIn.allowance(ctx.userAddress, routerAddr);
           if (currentAllowance < amountInWei) {
-            window.logMessage(`[APPROVE] Approving ${humanAmountIn} tokens for Router ${routerAddr}...`);
-            const approveTx = await tokenIn.approve(routerAddr, amountInWei);
+            window.logMessage(`[APPROVE] Approving ${amountInDisplay} (${amountInWei.toString()} wei) for Router ${routerAddr}...`);
+            const approveTx = await tokenIn.approve(routerAddr, amountInWei, { gasLimit: 100000n });
             window.logMessage(`[APPROVE] Tx sent: ${approveTx.hash}`);
             await approveTx.wait();
             window.logMessage('[APPROVE] Confirmed.');
